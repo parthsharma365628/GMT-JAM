@@ -1,4 +1,6 @@
 import * as T from 'three'
+import {volcanicRock} from './rocks.js'
+import {fingerPillar} from './pillars.js'
 const cube = new T.BoxGeometry()
 const materials = new Map()
 export function box(parent,x,y,z,w,h,d,color) {
@@ -77,11 +79,15 @@ export function runner(root,cfg,route){
     }else floor(0,length)
     for(let k=0;k<4;k++){
       const side=k%2?1:-1
-      box(g,side*6,1,-k*length/4,1.5,5+k,1.6,0x472c37).rotation.z=side*.16
+      const z=-k*length/4
+      if(!fingerPillar(g,side,z,piece.d0*4+k))box(g,side*6,1,z,1.5,5+k,1.6,0x472c37).rotation.z=side*.16
       box(g,side*4.3,.07,-k*length/4,.25,.14,4,0xc47b54)
     }
     if(type==='rocks'){
-      box(g,x,.9,-middle,4,1.8,2,0xa65d50).rotation.z=.08
+      const side=Math.sign(x), variant=Math.round(piece.d0)
+      volcanicRock(g,x+side*.62,-.06,-middle,2.65,1.92,2.1,variant)
+      volcanicRock(g,x-side*.83,-.04,-middle+.18,2.18,1.45,1.92,variant+3)
+      volcanicRock(g,x+side*1.45,-.04,-middle-.45,1.1,.72,1.18,variant+5)
       hazards.push({type,d,x})
     }
     if(type==='fire'){
@@ -95,7 +101,12 @@ export function runner(root,cfg,route){
     }
     if(type==='gate'){ // wall with one opening: steer through it
       const ox=gateX[side]??0
-      for(const [a,b] of [[-4.5,ox-1.5],[ox+1.5,4.5]])if(b-a>.05)box(g,(a+b)/2,1.2,-middle,b-a,2.4,.8,0x6b3a3f)
+      for(const [a,b] of [[-4.5,ox-1.5],[ox+1.5,4.5]]){
+        const width=b-a
+        if(width<=.05)continue
+        const variant=Math.floor(piece.d0/length)+(a>ox?1:0)
+        volcanicRock(g,(a+b)/2,-.04,-middle,width,2.44,1.38,variant,true)
+      }
       hazards.push({type,d,x:ox})
     }
     if(type==='pendulum'){ // blade swinging across the track: time it

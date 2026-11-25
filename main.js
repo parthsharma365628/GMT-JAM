@@ -1,6 +1,9 @@
 import * as T from 'three'
 import {actor,runner,arena,heaven,sword,forward} from './world.js'
 import {Combat} from './combat.js'
+import {animateCharacter} from './character.js'
+import {rocksReady} from './rocks.js'
+import {pillarsReady} from './pillars.js'
 import {stages,generateRoute} from './stage.js'
 import {axis,pressed,held} from './input.js'
 const $=s=>document.querySelector(s), menu=$('#menu'),hud=$('#hud'),hint=$('#hint')
@@ -14,6 +17,7 @@ const sun=new T.DirectionalLight(0xffdcba,2.5);sun.position.set(-8,16,5);scene.a
 const group=()=>{const g=new T.Group();scene.add(g);return g}
 const track=group(),room=group(),sky=group();heaven(sky)
 const player=actor(scene), boss=actor(room,true), loot=sword(room,0,1,0)
+const animatePlayer=animateCharacter(player)
 let state,prior,cfg,route,doors,combat,age,elapsed,retries,checkpoint,vertical,strafe,clock,stageId,dist,lat,height,ready=0,surge=1,jumpBuffer=0,squash=0,best=0,pending=[],stageScore=0,stageEmbers=0,score=0,embers=0
 const progress={swords:new Set(),stages:new Set()}
 const aim=new T.Vector3(),eye=new T.Vector3(),focus=new T.Vector3(),dir=new T.Vector3(),UP=new T.Vector3(0,1,0)
@@ -34,10 +38,11 @@ function load(id){
 const JUMP=13, RISE_GRAVITY=38, FALL_GRAVITY=52, JUMP_BUFFER=.15
 // After a respawn the runner waits briefly, then builds back up from base speed (forgiving checkpoints).
 const RESPAWN_PAUSE=.6, RESPAWN_RAMP=1.4
+let runPace=0
 function resetRunner(respawn=false){
   track.visible=true;room.visible=sky.visible=false;player.visible=true
   dist=checkpoint;lat=height=vertical=strafe=squash=jumpBuffer=0;player.scale.set(1,1,1)
-  ready=respawn?RESPAWN_PAUSE:0;surge=respawn?0:1;pending=[]
+  ready=respawn?RESPAWN_PAUSE:0;surge=respawn?0:1;runPace=0;pending=[]
   place();runnerView(camera.position,aim)
 }
 function restartStage(){
@@ -66,7 +71,7 @@ function encounter(){
   track.visible=sky.visible=false;room.visible=true;loot.visible=false
   boss.position.set(0,0,-2);boss.rotation.set(0,0,0);boss.visible=boss.userData.weapon.visible=true
   player.position.set(0,0,6);player.rotation.set(0,0,0);player.scale.set(1,1,1);player.visible=true
-  player.userData.weapon.rotation.set(0,0,0);boss.userData.weapon.rotation.set(0,0,0)
+  boss.userData.weapon.rotation.set(0,0,0)
   doors.door.position.y=2.5;doors.entry.position.y=-2
   combat?.dispose();combat=new Combat(room,player,boss,cfg);set('intro')
 }
@@ -88,7 +93,6 @@ function bars(label,objective,meters,tip){
 }
 const meter=(label,value)=>'<label>'+label+'<progress max="100" value="'+Math.round(value)+'"></progress></label>'
 function run(dt){
-  const ramp=cfg.speed+((cfg.topSpeed??cfg.speed)-cfg.speed)*Math.min(1,dist/route.end)
   strafe=T.MathUtils.damp(strafe,axis('right','left')*12,18,dt)
   lat=T.MathUtils.clamp(lat+strafe*dt,-4,4)
   jumpBuffer=pressed.has('jump')?JUMP_BUFFER:Math.max(0,jumpBuffer-dt) // a press just before landing still jumps
@@ -98,7 +102,11 @@ function run(dt){
   if(airborne && !height)squash=1
   squash=Math.max(0,squash-dt*6);player.scale.set(1+.12*squash,1-.2*squash+(vertical>0?.06:0),1+.12*squash)
   if(ready>0)ready-=dt
-  else{surge=Math.min(1,surge+dt/RESPAWN_RAMP);dist+=dt*(cfg.speed+(ramp-cfg.speed)*surge)}
+  else{
+    surge=Math.min(1,surge+dt/RESPAWN_RAMP)
+    runPace=Math.min(1,dist/route.end)*surge
+    dist+=dt*(cfg.speed+((cfg.topSpeed??cfg.speed)-cfg.speed)*runPace)
+  }
   place()
   if(dist>best){score+=Math.floor(dist)-Math.floor(best);best=dist;showScore()}
   for(const e of route.pickups){
@@ -189,9 +197,22 @@ function frameCamera(dt){
   const k=1-Math.exp(-dt*(state==='intro'?1.4:7))
   camera.position.lerp(eye,k);aim.lerp(focus,k);camera.lookAt(aim)
 }
-title();let prev=performance.now()
-renderer.setAnimationLoop(now=>{
-  const dt=Math.min(.05,Math.max(0,(now-prev)/1000));prev=now
-  update(dt);if(state!=='pause')frameCamera(dt);pressed.clear();renderer.render(scene,camera)
+function updatePlayerAnimation(dt){
+  if(state==='pause')return
+  if(state==='run')animatePlayer(dt,height>0?'jump':ready>0?'idle':'run',runPace)
+  else if(state==='fall')animatePlayer(dt,'fall')
+  else if(state==='heaven')animatePlayer(dt,'walk')
+  else if(state==='defeat')animatePlayer(dt,'defeat',Math.min(age*2,.5))
+  else if(state==='combat' && combat.dash>0)animatePlayer(dt,'dodge',1-combat.dash/.28)
+  else if(state==='combat' && combat.attack>0)animatePlayer(dt,'attack',1-combat.attack/.56)
+  else if((state==='combat'||state==='reward'||state==='exit') && combat.moving)animatePlayer(dt,'walk')
+  else animatePlayer(dt,'idle')
+}
+Promise.all([rocksReady,pillarsReady]).then(()=>{
+  title();let prev=performance.now()
+  renderer.setAnimationLoop(now=>{
+    const dt=Math.min(.05,Math.max(0,(now-prev)/1000));prev=now
+    update(dt);updatePlayerAnimation(dt);if(state!=='pause')frameCamera(dt);pressed.clear();renderer.render(scene,camera)
+  })
+  window.addEventListener('blur',()=>{held.clear();if(!['title','victory','pause'].includes(state))pause()})
 })
-window.addEventListener('blur',()=>{held.clear();if(!['title','victory','pause'].includes(state))pause()})

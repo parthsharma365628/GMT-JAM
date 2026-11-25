@@ -23,6 +23,7 @@ export class Combat{
     const p=this.player,b=this.boss
     const x=axis('right','left'),z=axis('down','up')
     const dir=delta.set(x+z,0,z-x).normalize()
+    this.moving=false
     this.cooldown=Math.max(0,this.cooldown-dt)
     this.immune=Math.max(0,this.immune-dt)
     if(active && pressed.has('dodge') && !this.cooldown && !this.attack){
@@ -31,6 +32,7 @@ export class Combat{
     if(this.dash>0){this.dash-=dt;p.position.addScaledVector(this.dashDir,dt*13)}
     else if(!this.attack){
       p.position.addScaledVector(dir,dt*5)
+      this.moving=dir.lengthSq()>0
       if(dir.lengthSq()){this.dir.copy(dir);face(p,dir)}
       if(active && pressed.has('attack')){
         this.attack=.56;this.hit=false
@@ -41,7 +43,6 @@ export class Combat{
     p.visible=!this.immune || Math.floor(this.immune*20)%2===0
     if(this.attack){
       this.attack=Math.max(0,this.attack-dt)
-      p.userData.weapon.rotation.x=-Math.sin((.56-this.attack)/.56*Math.PI)*1.8
       const diff=delta.subVectors(b.position,p.position)
       if(!this.hit && this.attack<.38 && this.attack>.17 && diff.length()<3 && diff.normalize().dot(this.dir)>.15){
         this.bossHp=Math.max(0,this.bossHp-10);this.hit=true;this.flash=.18
