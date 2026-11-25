@@ -1,0 +1,96 @@
+// ─────────────────────────────────────────────────────────────
+//  OPENING CUTSCENE SCRIPT — write your dialogue here.
+// ─────────────────────────────────────────────────────────────
+// The cutscene is a sequence of full-screen animated scenes.
+// Each scene is a sprite sheet with its frames stacked vertically.
+
+export const scenes = {
+  angelDrop: { sheet: './sprites/angel_drop.png',  fps: 4 },  // scene 1
+  quixote:   { sheet: './sprites/don_quixote.png', fps: 4 }   // scene 2
+}
+
+// One entry per text box, in order. Fields:
+//   scene   : which scene plays behind this line (key from `scenes` above)
+//   speaker : name on the tag, or null for narration
+//   text    : the line itself (\n for a manual line break)
+// Click, Space, Enter or E advances. Esc or "Skip" jumps to the game.
+export const script = [
+  // ── Scene 1 ──
+  { scene: 'angelDrop', speaker: 'Angel', text: 'I have been slain by my own sword, by that damned demon.' },
+  { scene: 'angelDrop', speaker: null,    text: 'After falling through the abyss for a long time...' },
+
+  // ── Scene 2 ──
+  { scene: 'quixote',   speaker: 'Angel', text: 'My wings withered and I grew horns as I hit the depths of Hell.\nI swear to kill that damned demon.' }
+]
+
+import {scenes,script} from './dialogue.js'
+
+// Plays the visual-novel intro, then calls done(). Returns a function that skips it.
+export function playCutscene(done){
+  const root=document.createElement('section');root.id='vn'
+  root.innerHTML='<div class="vn-backdrop"></div><div class="vn-scene"></div><div class="vn-fade"></div>'+
+    '<button class="vn-skip">Skip ▸▸</button>'+
+    '<div class="vn-box"><span class="vn-name"></span><p class="vn-text"></p><i class="vn-next">▼</i></div>'
+  document.body.append(root)
+  const $=s=>root.querySelector(s)
+  const view=$('.vn-scene'),backdrop=$('.vn-backdrop'),fade=$('.vn-fade'),box=$('.vn-box'),nameEl=$('.vn-name'),textEl=$('.vn-text')
+
+  // Count frames from each sheet's shape (square frames stacked vertically).
+  const sheets={}
+  for(const [key,s] of Object.entries(scenes)){
+    const img=new Image();img.src=s.sheet
+    sheets[key]={...s,img,frames:s.frames??0}
+    img.onload=()=>{if(!s.frames)sheets[key].frames=Math.max(1,Math.round(img.naturalHeight/img.naturalWidth));if(key===current)apply()}
+  }
+
+  let index=-1,typing=null,full='',finished=false,current=null,frame=0,ticker=null
+  function apply(){
+    const s=sheets[current],n=s.frames||1
+    for(const el of [view,backdrop]){el.style.backgroundImage='url("'+s.sheet+'")';el.style.backgroundSize='100% '+n*100+'%'}
+    draw()
+  }
+  function draw(){
+    const n=sheets[current].frames||1,y=n>1?frame/(n-1)*100:0
+    view.style.backgroundPositionY=backdrop.style.backgroundPositionY=y+'%'
+  }
+  function setScene(key){
+    if(key===current)return
+    const first=current===null;current=key;frame=0;clearInterval(ticker)
+    const start=()=>{apply();ticker=setInterval(()=>{frame=(frame+1)%(sheets[current].frames||1);draw()},1000/(sheets[current].fps||4))}
+    if(first)start()
+    else{fade.classList.add('on');setTimeout(()=>{start();fade.classList.remove('on')},350)}   // dip to black between scenes
+  }
+
+  function show(i){
+    const line=script[i]
+    setScene(line.scene??current??Object.keys(scenes)[0])
+    nameEl.textContent=line.speaker??'';nameEl.hidden=!line.speaker
+    box.classList.toggle('narration',!line.speaker)
+    full=line.text;textEl.textContent='';box.classList.remove('done')
+    let n=0;clearInterval(typing)
+    typing=setInterval(()=>{n++;textEl.textContent=full.slice(0,n);if(n>=full.length)complete()},28)
+  }
+  function complete(){clearInterval(typing);typing=null;textEl.textContent=full;box.classList.add('done')}
+  function advance(){
+    if(finished)return
+    if(typing){complete();return}           // first press finishes the typewriter
+    if(++index>=script.length)return end()
+    show(index)
+  }
+  function end(){
+    if(finished)return;finished=true;clearInterval(typing);clearInterval(ticker)
+    removeEventListener('keydown',key,true)
+    root.classList.add('out');setTimeout(()=>root.remove(),500)
+    done()
+  }
+  function key(e){
+    if(['Space','Enter','KeyE','KeyJ'].includes(e.code)){e.preventDefault();e.stopImmediatePropagation();if(!e.repeat)advance()}
+    else if(e.code==='Escape'){e.preventDefault();e.stopImmediatePropagation();end()}
+  }
+  addEventListener('keydown',key,true)   // capture phase: the game's input handler never sees these keys
+  root.addEventListener('pointerdown',e=>{if(!e.target.closest('.vn-skip'))advance()})
+  $('.vn-skip').onclick=e=>{e.stopPropagation();end()}
+  requestAnimationFrame(()=>root.classList.add('on'))
+  advance()
+  return end
+}
