@@ -1,2 +1,20 @@
 *{box-sizing:border-box}body{margin:0;overflow:hidden;background:#25151f;color:#fff5de;font:16px 'Work Sans',system-ui,sans-serif}canvas{position:fixed;inset:0;z-index:-1}main{position:absolute;inset:0;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:8vw;background:linear-gradient(90deg,#1d1018f7,#241720aa 48%,transparent)}[hidden]{display:none!important}small{color:#ffc888;font-weight:700;letter-spacing:.24em;font-size:12px}h1{font:clamp(50px,8vw,116px)/.93 Georgia,serif;letter-spacing:-.065em;margin:.23em 0}i{color:#ffd396;font-weight:400}p{line-height:1.7;max-width:490px;white-space:pre-line}button{font:inherit;font-weight:650;background:#ffd49b;color:#291824;border:0;padding:12px 22px;margin:6px 8px 0 0;cursor:pointer}button:hover,button:focus-visible{background:white}aside,#hint{position:fixed;background:#231922e8;padding:14px 20px;border-left:3px solid #e6a264}aside{left:3vw;top:4vh;min-width:230px}strong{display:block;margin:4px 0}#hint{bottom:5vh;left:50%;transform:translateX(-50%);text-align:center}#hint:empty{display:none}progress{accent-color:#f09359;width:100%}label{display:block;font-size:13px}
 #score{position:fixed;min-width:180px;top:3vh;left:50%;transform:translateX(-50%);text-align:center;background:#231922e8;padding:10px 26px;border-bottom:3px solid #e6a264}#score b{display:block;font:700 30px/1.1 Georgia,serif;font-variant-numeric:tabular-nums lining-nums;color:#ffe2b0}#score span{font-size:13px;color:#ffc888}#points.pop{animation:pop .25s ease-out}@keyframes pop{40%{transform:scale(1.25);color:#fff}}
+/* ── Visual-novel opening cutscene ── */
+#vn{position:fixed;inset:0;z-index:10;overflow:hidden;cursor:pointer;user-select:none;opacity:0;transition:opacity .5s;background:#0b0508}
+#vn.on{opacity:1}#vn.out{opacity:0;pointer-events:none}
+.vn-backdrop,.vn-scene{position:absolute;background-repeat:no-repeat;image-rendering:pixelated}
+.vn-backdrop{inset:-40px;background-size:cover;filter:blur(28px) brightness(.35) saturate(.8)}
+.vn-scene{left:50%;top:0;transform:translateX(-50%);height:100vh;aspect-ratio:1;max-width:100vw;box-shadow:0 0 80px 30px #0b0508}
+.vn-fade{position:absolute;inset:0;background:#000;opacity:0;transition:opacity .35s;pointer-events:none}
+.vn-fade.on{opacity:1}
+.vn-box{position:absolute;left:50%;bottom:4vh;transform:translateX(-50%);width:min(880px,92vw);min-height:18vh;padding:30px 34px 26px;
+  background:#1d1018e6;border:2px solid #e6a264;box-shadow:0 0 0 4px #1d1018,0 18px 40px #0008}
+.vn-name{position:absolute;top:-18px;left:28px;background:#1d1018;border:2px solid #e6a264;padding:4px 16px;
+  font:700 15px Georgia,serif;letter-spacing:.06em;color:#ffc46b}
+.vn-text{margin:0;max-width:none;font-size:clamp(16px,2.1vh,21px);line-height:1.6;color:#fff5de}
+.vn-box.narration .vn-text{font-style:italic;color:#ffd396;text-align:center}
+.vn-next{position:absolute;right:18px;bottom:10px;color:#e6a264;font-style:normal;opacity:0}
+.vn-box.done .vn-next{opacity:1;animation:vn-bob .8s ease-in-out infinite}
+@keyframes vn-bob{50%{transform:translateY(4px)}}
+.vn-skip{position:absolute;top:3vh;right:3vw;margin:0;background:#231922cc;color:#ffc888;border:1px solid #e6a264;font-size:13px;letter-spacing:.12em}
