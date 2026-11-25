@@ -3,6 +3,7 @@ import {actor,runner,arena,heaven,sword,forward} from './world.js'
 import {Combat} from './combat.js'
 import {stages,generateRoute} from './stage.js'
 import {axis,pressed,held} from './input.js'
+import {playCutscene} from './cutscene.js'
 const $=s=>document.querySelector(s), menu=$('#menu'),hud=$('#hud'),hint=$('#hint')
 const renderer=new T.WebGLRenderer({antialias:true})
 renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));document.body.prepend(renderer.domElement)
@@ -61,7 +62,9 @@ function runnerView(eyeOut,focusOut){
 }
 const toRoom=v=>v.sub(route.endPos).applyAxisAngle(UP,-route.endHeading)
 function start(){progress.swords.clear();progress.stages.clear();elapsed=retries=score=embers=0;showScore();load('depths');play()}
-function title(){start();set('title');panel('From Hell<br><i>to Heaven</i>','Survive the ascent. Defeat the guardian. Reclaim the fallen sword.\nRun · A/D to steer, Space to jump\nFight · WASD to move, J to strike, K to dodge\nEsc to pause',[['Start Ascent',start]])}
+function title(){start();set('title');panel('From Hell<br><i>to Heaven</i>','Survive the ascent. Defeat the guardian. Reclaim the fallen sword.\nRun · A/D to steer, Space to jump\nFight · WASD to move, J to strike, K to dodge\nEsc to pause',[['Start Ascent',intro]])}
+// Opening cutscene (script lives in dialogue.js), then the run begins.
+function intro(){menu.hidden=true;playCutscene(start)}
 function encounter(){
   track.visible=sky.visible=false;room.visible=true;loot.visible=false
   boss.position.set(0,0,-2);boss.rotation.set(0,0,0);boss.visible=boss.userData.weapon.visible=true
