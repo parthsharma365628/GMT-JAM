@@ -76,6 +76,13 @@ Then open the address printed in the terminal.
 
 ## Controls
 
+### Opening cutscene
+
+- Click, `Space`, `Enter` or `E`: advance dialogue
+- `Esc` or the Skip button: skip to the run
+
+Write the cutscene dialogue in `dialogue.js`.
+
 ### Obstacle run
 
 - `A` / `D` or Left / Right arrows: steer

@@ -1,16 +1,12 @@
 import * as T from 'three'
 import {actor,runner,arena,heaven,sword,greatsword,rapier,forward} from './world.js'
-import {Combat,DEFAULT_COMBO,DEFAULT_DASH_STRIKE,DEFAULT_SPECIAL,equipWeaponMesh} from './combat.js'
+import {Combat,DEFAULT_COMBO,DEFAULT_DASH_STRIKE,DEFAULT_SPECIAL} from './combat.js'
 import {animateCharacter} from './character.js'
-import {animateWarden,wardensReady} from './warden-models.js'
 import {rocksReady} from './rocks.js'
 import {pillarsReady} from './pillars.js'
-import {attachWeaponModel,replaceWeaponModel,weaponsReady} from './weapon-models.js'
-import {hedgesReady} from './hedges.js'
-import {forestReady,forestSky,updateForestWater} from './forest.js'
 import {stages,generateRoute} from './stage.js'
 import {axis,pressed,held} from './input.js'
-
+import {playCutscene} from './cutscene.js'
 const $=s=>document.querySelector(s), menu=$('#menu'),hud=$('#hud'),hint=$('#hint')
 const renderer=new T.WebGLRenderer({antialias:true})
 renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));document.body.prepend(renderer.domElement)
@@ -22,12 +18,8 @@ const light=new T.HemisphereLight(0xffe8ce,0xbc7773,2.1);scene.add(light)
 const sun=new T.DirectionalLight(0xffdcba,2.5);sun.position.set(-8,16,5);scene.add(sun)
 const group=()=>{const g=new T.Group();scene.add(g);return g}
 const track=group(),room=group(),sky=group();heaven(sky)
-const player=actor(scene), hellBoss=actor(room,true), earthBoss=actor(room,true), otherBoss=actor(room,true), loot=new T.Group()
-const bosses={hell:hellBoss,earth:earthBoss}
-let boss=hellBoss
+const player=actor(scene), boss=actor(room,true), loot=sword(room,0,1,0)
 const animatePlayer=animateCharacter(player)
-const preview=import.meta.env.DEV?new URLSearchParams(location.search).get('preview'):null
-const previewBossStage=preview==='hell-boss'?'hell':preview==='middle-earth-boss'?'middleEarth':null
 
 // --- WEAPON CATALOG ADAPTER (Teammate's weapons.js plugs in via registerWeapons) ---
 let weaponCatalog=[
@@ -36,9 +28,7 @@ let weaponCatalog=[
     desc:'Balanced celestial blade.',
     combo:DEFAULT_COMBO,dashStrike:DEFAULT_DASH_STRIKE,
     special:DEFAULT_SPECIAL,
-    createMesh:parent=>{
-      if(!attachWeaponModel(parent,'ember'))sword(parent,0,0,0)
-    }
+    createMesh:parent=>sword(parent,0,0,0)
   },
   {
     id:'cinder_greatsword',name:'Cinder Greatsword',unlockType:'box',price:0,
@@ -77,16 +67,7 @@ export function registerWeapons(customList){
   }
 }
 window.registerWeapons=registerWeapons
-const guardianWeapons=new Map(Object.values(stages).filter(stage=>stage.rewardWeapon).map(stage=>[
-  stage.rewardWeapon,{
-    id:stage.rewardWeapon,name:stage.sword,
-    createMesh:parent=>{
-      if(!attachWeaponModel(parent,stage.rewardWeapon))sword(parent)
-    }
-  }
-]))
-const getWeapon=id=>guardianWeapons.get(id)??weaponCatalog.find(w=>w.id===id)??weaponCatalog[0]
-const earnedGuardianWeapons=()=>[...guardianWeapons.values()].filter(w=>progress.weapons.has(w.id))
+const getWeapon=id=>weaponCatalog.find(w=>w.id===id)??weaponCatalog[0]
 
 // --- DYNAMIC ARSENAL & SHOP DOM ---
 const arsenalEl=document.createElement('section')
@@ -107,7 +88,6 @@ const progress={
   stages:new Set(),
   weapons:new Set(['ember_blade']),
   equipped:'ember_blade',
-  entryWeapon:'ember_blade',
   potions:1,
   maxHp:100,
   entryPotions:1
@@ -127,17 +107,13 @@ function renderArsenal(){
   arsenalEl.hidden=!show
   if(!show)return
   const slotsEl=$('#slots')
-  const slots=weaponCatalog.map((w,i)=>{
+  slotsEl.innerHTML=weaponCatalog.map((w,i)=>{
     const unlocked=progress.weapons.has(w.id)
     const active=progress.equipped===w.id
     const cls=active?'slot active':unlocked?'slot unlocked':'slot locked'
     const label=unlocked?`[${i+1}] ${w.name}`:`[${i+1}] ??? (${w.unlockType==='shop'?'Shop':'Box'})`
     return `<span class="${cls}">${label}</span>`
-  })
-  for(const w of earnedGuardianWeapons()){
-    slots.push(`<span class="slot ${progress.equipped===w.id?'active':'unlocked'}">[Q] ${w.name}</span>`)
-  }
-  slotsEl.innerHTML=slots.join('')
+  }).join('')
   const lockEl=$('#lockout')
   if(combat && !combat.canSwitch){
     lockEl.textContent=combat.switchLockout>0?`Weapon switch locked (${combat.switchLockout.toFixed(1)}s)`:'Cannot switch mid-move'
@@ -208,23 +184,9 @@ function renderShop(){
 }
 
 function load(id){
-  combat?.dispose();track.clear();room.clear()
-  stageId=id;cfg=stages[id]
-  progress.entryWeapon=progress.equipped
-  boss=bosses[cfg.wardenModels]??otherBoss
-  loot.clear()
-  loot.rotation.set(0,0,0)
-  loot.visible=false
-  if(!cfg.rewardWeapon||!attachWeaponModel(loot,cfg.rewardWeapon,1.2))sword(loot)
-  room.add(boss,loot)
-  route=runner(track,cfg,generateRoute(cfg));doors=arena(room,cfg)
-  scene.background=cfg.forest?forestSky():new T.Color(cfg.sky)
-  scene.fog=new T.FogExp2(cfg.sky,cfg.forest?.025:.017)
-  light.color.setHex(cfg.forest?0xf0ebc9:0xffe8ce)
-  light.groundColor.setHex(cfg.forest?0x60744c:0xbc7773)
-  light.intensity=cfg.forest?1.65:2.1
-  sun.color.setHex(cfg.forest?0xf7e8ad:0xffdcba)
-  sun.intensity=cfg.forest?2.05:2.5
+  combat?.dispose();track.clear();room.clear();room.add(boss,loot)
+  stageId=id;cfg=stages[id];route=runner(track,cfg,generateRoute(cfg));doors=arena(room,cfg)
+  scene.background=new T.Color(cfg.sky);scene.fog=new T.FogExp2(cfg.sky,.017)
   stageScore=score;stageEmbers=embers;checkpoint=clock=best=0;resetRunner();set('run')
 }
 const JUMP=13, RISE_GRAVITY=38, FALL_GRAVITY=52, JUMP_BUFFER=.15
@@ -260,22 +222,23 @@ function runnerView(eyeOut,focusOut){
   route.at(dist,lat*.3,focusOut);focusOut.addScaledVector(dir,5);focusOut.y=1
 }
 const toRoom=v=>v.sub(route.endPos).applyAxisAngle(UP,-route.endHeading)
-function start(id='hell'){
+function start(){
   const starter=weaponCatalog.find(w=>w.unlockType==='starter')??weaponCatalog[0]
   progress.swords.clear();progress.stages.clear()
   progress.weapons=new Set([starter.id]);progress.equipped=starter.id
-  equipWeaponMesh(player,starter)
   progress.potions=1;progress.maxHp=100;progress.entryPotions=1
-  elapsed=retries=score=embers=0;showScore();load(id);play()
+  elapsed=retries=score=embers=0;showScore();load('hell');play()
 }
 function title(){
   start();set('title')
   panel(
     'From Hell<br><i>to Heaven</i>',
     'Survive the ascent. Collect Embers & Lucky Boxes. Conquer the chamber.\nRun · A/D to steer, Space to jump\nFight · WASD move, LMB/J strike, RMB/I special, Space/K dodge, 1-3/Q weapon, R potion',
-    [['Start Ascent',start],['Skip to Dungeon 1',()=>{start();embers=250;showScore();encounter()}]]
+    [['Start Ascent',intro],['Skip to Dungeon 1',()=>{start();embers=250;showScore();encounter()}]]
   )
 }
+// Opening cutscene (script lives in dialogue.js), then the run begins.
+function intro(){menu.hidden=true;playCutscene(start)}
 function encounter(){
   track.visible=sky.visible=false;room.visible=true;loot.visible=false;shopEl.hidden=true
   boss.position.set(0,0,-2);boss.rotation.set(0,0,0);boss.visible=boss.userData.weapon.visible=true
@@ -284,14 +247,6 @@ function encounter(){
   doors.door.position.y=2.5;doors.entry.position.y=-2;doors.stall.visible=false
   progress.entryPotions=progress.potions
   combat?.dispose();combat=new Combat(room,player,boss,cfg,progress.maxHp,getWeapon(progress.equipped));set('intro')
-  if(previewBossStage===stageId){
-    const bossWave=cfg.waves.findIndex(wave=>wave.boss)
-    if(bossWave>=0){
-      combat.waves.index=bossWave-1
-      combat.waves.startNextWave(combat.enemies)
-      set('combat')
-    }
-  }
 }
 function ascent(){room.visible=false;sky.visible=true;player.position.set(0,0,0);player.rotation.set(0,0,0);set('heaven')}
 function pause(){
@@ -301,15 +256,7 @@ function pause(){
     play()
     if(['run','fall'].includes(prior.state)){restartStage();set('run')}
     else if(prior.state==='heaven')ascent()
-    else{
-      progress.swords.delete(cfg.sword)
-      if(cfg.rewardWeapon){
-        progress.weapons.delete(cfg.rewardWeapon)
-        if(progress.equipped===cfg.rewardWeapon)progress.equipped=progress.entryWeapon
-      }
-      progress.potions=progress.entryPotions
-      encounter()
-    }
+    else{progress.swords.delete(cfg.sword);progress.potions=progress.entryPotions;encounter()}
   }],['Return to title',title]])
 }
 function resume(){play();set(prior.state);age=prior.age}
@@ -337,7 +284,7 @@ function handleDungeonHotkeys(){
   else if(pressed.has('slot2'))targetId=weaponCatalog[1]?.id
   else if(pressed.has('slot3'))targetId=weaponCatalog[2]?.id
   else if(pressed.has('cycleWeapon')){
-    const unlocked=[...weaponCatalog.filter(w=>progress.weapons.has(w.id)),...earnedGuardianWeapons()]
+    const unlocked=weaponCatalog.filter(w=>progress.weapons.has(w.id))
     if(unlocked.length>1){
       const idx=unlocked.findIndex(w=>w.id===progress.equipped)
       targetId=unlocked[(idx+1)%unlocked.length].id
@@ -357,6 +304,14 @@ function handleDungeonHotkeys(){
   }
 }
 
+// Runner progress bar: the red fill inside finish_line.png grows smoothly from dark to bright red.
+const progressBar=$('#progress'),progressFill=$('#progress .fill')
+let barShown=false,barFill=-1
+function showProgress(on){if(on!==barShown){barShown=on;progressBar.hidden=$('#controls').hidden=!on}} // bar and controls panel
+function drawProgress(fraction){
+  const f=Math.round(Math.min(1,Math.max(0,fraction))*1000)/10;if(f===barFill)return;barFill=f
+  progressFill.style.backgroundSize=f+'% 100%'
+}
 function run(dt){
   strafe=T.MathUtils.damp(strafe,axis('right','left')*12,18,dt)
   lat=T.MathUtils.clamp(lat+strafe*dt,-4,4)
@@ -421,17 +376,10 @@ function run(dt){
     }
   }
   const cp=route.checkpoint(dist);if(cp!==checkpoint){checkpoint=cp;pending=[];pendingBoxes=[]}
-  const defaultTip=ready>0?'Get ready…':dist<45?'A / D to steer   ·   Space to jump   ·   Hit Lucky Boxes for weapons':''
+  drawProgress(dist/route.end)
+  const defaultTip=ready>0?'Get ready…':dist<45?'Hit Lucky Boxes for weapons':''
   bars(cfg.name,cfg.placeholder?'Placeholder Runner Section':'Reach the gate','',bannerTimer>0?hint.textContent:defaultTip)
   if(dist>=route.end){toRoom(camera.position);toRoom(aim);encounter()}
-}
-
-function dropGuardianSword(){
-  if(loot.visible)return
-  boss.userData.weapon.visible=false
-  loot.position.copy(boss.position)
-  loot.position.y=1
-  loot.visible=true
 }
 
 function dungeon(dt){
@@ -448,10 +396,6 @@ function dungeon(dt){
     if(age>3.6)set('combat')
   }else if(state==='combat'){
     combat.update(dt)
-    if(cfg.wardenModels==='earth' && combat.waves.bossActive && combat.bossHp===0){
-      dropGuardianSword()
-      loot.rotation.y+=dt*2
-    }
     const aliveMobs=combat.enemies.filter(e=>e.alive).length
     const titleLabel=combat.waves.bossActive?cfg.guardian:`Wave ${Math.max(1,combat.waves.current)} / ${combat.waves.total}`
     const hpMeter=meter('Vitality',100*combat.hp/progress.maxHp,`${Math.ceil(combat.hp)} / ${progress.maxHp}`,'vitality')
@@ -461,18 +405,16 @@ function dungeon(dt){
     const specialPct=100*(1-combat.specialCooldown/combat.specialMaxCd)
     const specialMeter=meter('Special [RMB]',specialPct,combat.specialReady?'Ready':`${combat.specialCooldown.toFixed(1)}s`,'dodge')
     const dodgeMeter=meter('Dodge',100*(1-combat.cooldown),combat.cooldown<=0?'Ready':`${combat.cooldown.toFixed(1)}s`,'dodge')
-    const defaultTip=combat.waves.bossActive && combat.bossHp===0 && aliveMobs
-      ?`Guardian down · ${aliveMobs} ${aliveMobs===1?'hostile':'hostiles'} remaining`
-      :combat.waves.bossActive && combat.bossHp>0 && combat.phase==='wind'
+    const defaultTip=combat.waves.bossActive && combat.phase==='wind'
       ?(combat.key==='slam'?'Ground slam — clear the circle':'Heavy swing — dodge')
       :(aliveMobs?`${aliveMobs} hostiles remaining`:'Next wave incoming…')
     bars(titleLabel,cfg.name,hpMeter+targetMeter+specialMeter+dodgeMeter,bannerTimer>0?hint.textContent:defaultTip)
     if(combat.cleared){player.visible=true;score+=500;showScore(true);set('collapse')}
-    else if(!combat.hp){player.visible=true;retries++;progress.potions=progress.entryPotions;set('defeat');hint.textContent='You fell · Restarting the encounter'}
+    else if(!combat.hp){retries++;progress.potions=progress.entryPotions;set('defeat');hint.textContent='You fell · Restarting the encounter'}
   }else if(state==='defeat'){if(age>1.4)encounter()}
   else if(state==='collapse'){
-    if(loot.visible)loot.rotation.y+=dt*2
-    if(age>1.1){dropGuardianSword();set('reward')}
+    boss.rotation.z=Math.min(1.5,age*1.5)
+    if(age>1.1){boss.userData.weapon.visible=false;loot.position.copy(boss.position);loot.position.y=1;loot.visible=true;set('reward')}
   }else{
     combat.move(dt,false);loot.rotation.y+=dt*2
     const nearSword=player.position.distanceTo(loot.position)<3
@@ -480,12 +422,6 @@ function dungeon(dt){
       bars('Guardian defeated',cfg.sword,'',nearSword?'E · Reclaim the fallen sword':'Approach the golden blade')
       if(nearSword && pressed.has('claim')){
         progress.swords.add(cfg.sword)
-        const reward=guardianWeapons.get(cfg.rewardWeapon)
-        if(reward){
-          progress.weapons.add(reward.id)
-          progress.equipped=reward.id
-          combat.setWeapon(reward,false)
-        }
         loot.visible=false
         doors.stall.visible=Boolean(cfg.next)
         set('exit')
@@ -527,10 +463,7 @@ function update(dt){
     if(-player.position.z>=99){
       set('victory');panel('You Reached<br><i>Heaven</i>',[...progress.swords].join(' · ')+'\n'+'Score '+score+' · '+embers+' embers\n'+Math.floor(elapsed/60)+'m '+Math.floor(elapsed%60)+'s   ·   '+retries+' retries',[['Restart',start],['Return to title',title]])
     }
-  }else{
-    dungeon(dt)
-    if(state==='combat'||state==='defeat'||state==='collapse')combat.updateBossFall(dt)
-  }
+  }else dungeon(dt)
 }
 
 function frameCamera(dt){
@@ -571,21 +504,11 @@ function updatePlayerAnimation(dt){
   }else animatePlayer(dt,'idle',0,inCombat)
 }
 
-Promise.all([rocksReady,pillarsReady,wardensReady,weaponsReady,hedgesReady,forestReady]).then(()=>{
-  for(const [actor,key] of [[player,'ember'],[hellBoss,'warden'],[earthBoss,'earthSword']]){
-    replaceWeaponModel(actor.userData.weapon,key)
-  }
-  hellBoss.userData.animate=animateWarden('hell',hellBoss,2.35)
-  earthBoss.userData.animate=animateWarden('earth',earthBoss,2.25)
-  if(previewBossStage){start(previewBossStage);encounter()}
-  else if(preview==='middle-earth')start('middleEarth')
-  else title()
-  let prev=performance.now()
+Promise.all([rocksReady,pillarsReady]).then(()=>{
+  title();let prev=performance.now()
   renderer.setAnimationLoop(now=>{
     const dt=Math.min(.05,Math.max(0,(now-prev)/1000));prev=now
-    update(dt);updatePlayerAnimation(dt);if(state!=='pause')frameCamera(dt)
-    if(cfg.forest)updateForestWater(clock)
-    pressed.clear();renderer.render(scene,camera)
+    update(dt);updatePlayerAnimation(dt);showProgress(['run','fall'].includes(state));if(state!=='pause')frameCamera(dt);pressed.clear();renderer.render(scene,camera)
   })
   window.addEventListener('blur',()=>{held.clear();if(!['title','victory','pause'].includes(state))pause()})
 })
