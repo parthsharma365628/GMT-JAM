@@ -130,6 +130,7 @@ const aim=new T.Vector3(),eye=new T.Vector3(),focus=new T.Vector3(),dir=new T.Ve
 function set(s){state=s;age=0;hint.textContent='';pressed.clear();renderArsenal()}
 function panel(title,copy,actions){
   menu.hidden=false;hud.hidden=$('#score').hidden=arsenalEl.hidden=true;shopEl.hidden=true;hint.textContent=''
+  menu.classList.remove('paused');$('#sections').hidden=true
   $('h1').innerHTML=title;$('#copy').textContent=copy;$('#buttons').replaceChildren()
   for(const [name,fn] of actions){const b=document.createElement('button');b.textContent=name;b.onclick=()=>{b.blur();fn()};$('#buttons').append(b)}
 }
@@ -315,6 +316,28 @@ function ascent(){
   scene.fog.color.setHex(stages.heavensGate.sky)
   player.position.set(0,0,0);player.rotation.set(0,0,0);set('heaven')
 }
+// Section list for the pause menu: every runner and combat section, in order. Sections you have finished are
+// saved in localStorage, so they stay unlocked after the run ends (and after reloading the page).
+const SECTIONS=Object.entries(stages).flatMap(([id,s])=>[
+  {key:id+':run',stage:id,kind:'Runner',name:s.name},
+  {key:id+':fight',stage:id,kind:'Combat',name:s.guardian}
+])
+const SAVE_KEY='gmt-jam.sections'
+const cleared=new Set((()=>{try{return JSON.parse(localStorage.getItem(SAVE_KEY))||[]}catch{return []}})())
+function clearSection(kind){
+  const key=stageId+':'+kind;if(cleared.has(key))return
+  cleared.add(key);try{localStorage.setItem(SAVE_KEY,JSON.stringify([...cleared]))}catch{}
+}
+function renderSections(fromState){
+  const current=['run','fall'].includes(fromState)?stageId+':run':fromState==='heaven'?null:stageId+':fight'
+  $('#sections').replaceChildren(...SECTIONS.map((sec,i)=>{
+    const li=document.createElement('li')
+    li.className=sec.key===current?'current':cleared.has(sec.key)?'cleared':'locked'
+    li.innerHTML=`<span class="num">${i+1}</span><span class="kind">${sec.kind}</span><span class="name">${cleared.has(sec.key)||sec.key===current?sec.name:'Locked'}</span>`
+    return li
+  }))
+  $('#sections').hidden=false
+}
 function pause(){
   if(state==='shop')closeShop()
   prior={state,age};set('pause')
@@ -332,6 +355,7 @@ function pause(){
       encounter()
     }
   }],['Return to title',title]])
+  menu.classList.add('paused');renderSections(prior.state)
 }
 function resume(){play();set(prior.state);age=prior.age}
 function bars(label,objective,meters,tip){
@@ -499,7 +523,7 @@ function run(dt){
   drawProgress(dist/route.end)
   const defaultTip=ready>0?'Get ready…':dist<45?'Hit Lucky Boxes for weapons':''
   bars(cfg.name,cfg.placeholder?'Placeholder Runner Section':'Reach the gate','',bannerTimer>0?hint.textContent:defaultTip)
-  if(dist>=route.end){toRoom(camera.position);toRoom(aim);encounter()}
+  if(dist>=route.end){clearSection('run');toRoom(camera.position);toRoom(aim);encounter()}
 }
 
 function dropGuardianSword(){
@@ -546,6 +570,7 @@ function dungeon(dt){
       const hazard=cfg.celestial?'cloud':cfg.forest?'bush':'volcanic rock'
       hint.textContent=combat.hazardHit?`You hit a ${hazard} · Restarting the encounter`:'You fell · Restarting the encounter'
     }else if(combat.cleared){
+      clearSection('fight')
       combat.elements.dispose()
       doors.hazardGroup.visible=false
       player.visible=true;progress.overheal=0;score+=500;showScore(true);set('collapse')
