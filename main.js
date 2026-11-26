@@ -1,6 +1,6 @@
 import * as T from 'three'
 import {actor,runner,arena,heaven,sword,greatsword,rapier,forward} from './world.js'
-import {Combat,DEFAULT_COMBO,DEFAULT_DASH_STRIKE,DEFAULT_SPECIAL,equipWeaponMesh} from './combat.js'
+import {Combat,MAX_HEARTS,MAX_OVERHEAL,POTION_HEARTS,DEFAULT_COMBO,DEFAULT_DASH_STRIKE,DEFAULT_SPECIAL,equipWeaponMesh} from './combat.js'
 import {animateCharacter} from './character.js'
 import {animateWarden,wardensReady} from './warden-models.js'
 import {rocksReady} from './rocks.js'
@@ -114,7 +114,8 @@ const progress={
   equipped:'ember_blade',
   entryWeapon:'ember_blade',
   potions:1,
-  maxHp:100,
+  maxHp:MAX_HEARTS,
+  overheal:0, // overheal hearts bought in the shop, carried into the next fight
   entryPotions:1
 }
 
@@ -150,7 +151,7 @@ function renderArsenal(){
     lockEl.textContent='[1-3 / Q] Switch Weapon'
   }
   $('#potions').textContent=`[R] Potions: ${progress.potions} / ${MAX_POTIONS}`
-  $('#maxhp-tag').textContent=`Max HP: ${progress.maxHp}`
+  $('#maxhp-tag').textContent=combat?`Hearts: ${combat.hp+combat.overheal}`:''
 }
 
 function openShop(){
@@ -165,7 +166,7 @@ function closeShop(){
 $('#shop-close').onclick=e=>{e.stopPropagation();$('#shop-close').blur();closeShop()}
 
 function renderShop(){
-  $('#shop-embers').textContent=`Available Embers: ✦ ${embers}  ·  Current HP: ${Math.round(combat.hp)} / ${progress.maxHp}`
+  $('#shop-embers').textContent=`Available Embers: ✦ ${embers}  ·  Next fight: ${progress.maxHp} hearts${progress.overheal?' + '+progress.overheal+' overheal':''}`
   const grid=$('#shop-items')
   grid.replaceChildren()
 
@@ -180,18 +181,18 @@ function renderShop(){
   const fullPotions=progress.potions>=MAX_POTIONS
   addRow(
     `Crimson Draught (${progress.potions}/${MAX_POTIONS})`,
-    'Restores +40 HP during combat when pressing R or F.',
+    `Heals ${POTION_HEARTS} hearts (R or F). Broken hearts are repaired first; the rest becomes overheal.`,
     fullPotions?'Maxed':'100 ✦',
     fullPotions || embers<100,
     ()=>{embers-=100;progress.potions++}
   )
 
   addRow(
-    'Vitality Elixir (+20 Max HP)',
-    'Permanently increases Max Vitality for this run and heals to full.',
-    '150 ✦',
-    embers<150,
-    ()=>{embers-=150;progress.maxHp+=20;combat.maxHp=progress.maxHp;combat.hp=progress.maxHp}
+    'Vitality Elixir',
+    `Start the next fight with ${MAX_OVERHEAL} yellow overheal hearts.`,
+    progress.overheal>=MAX_OVERHEAL?'Owned':'150 ✦',
+    embers<150 || progress.overheal>=MAX_OVERHEAL,
+    ()=>{embers-=150;progress.overheal=MAX_OVERHEAL}
   )
 
   for(const w of weaponCatalog){
@@ -270,7 +271,7 @@ function start(id='hell'){
   progress.swords.clear();progress.stages.clear()
   progress.weapons=new Set([starter.id]);progress.equipped=starter.id
   equipWeaponMesh(player,starter)
-  progress.potions=1;progress.maxHp=100;progress.entryPotions=1
+  progress.potions=1;progress.maxHp=MAX_HEARTS;progress.overheal=0;progress.entryPotions=1
   elapsed=retries=score=embers=0;showScore();load(id);play()
 }
 function title(){
@@ -290,7 +291,7 @@ function encounter(){
   boss.userData.weapon.rotation.set(0,0,0)
   doors.door.position.y=2.5;doors.entry.position.y=-2;doors.stall.visible=false
   progress.entryPotions=progress.potions
-  combat?.dispose();combat=new Combat(room,player,boss,cfg,progress.maxHp,getWeapon(progress.equipped));set('intro')
+  combat?.dispose();combat=new Combat(room,player,boss,cfg,progress.maxHp,getWeapon(progress.equipped));combat.overheal=progress.overheal;set('intro')
   if(previewBossStage===stageId){
     const bossWave=cfg.waves.findIndex(wave=>wave.boss)
     if(bossWave>=0){
@@ -337,11 +338,11 @@ const meter=(label,value,detail='',tone='vitality')=>{
 function handleDungeonHotkeys(){
   if(!combat)return
   if(pressed.has('potion')){
-    if(progress.potions>0 && combat.hp<progress.maxHp && combat.potionCooldown<=0){
+    if(progress.potions>0 && combat.canHeal && combat.potionCooldown<=0){
       progress.potions--
-      combat.heal(40)
+      combat.heal()
       bannerTimer=1.6
-      hint.textContent='Used Crimson Draught (+40 HP)'
+      hint.textContent=`Used Crimson Draught (+${POTION_HEARTS} hearts)`
     }
   }
   let targetId=null
@@ -369,6 +370,39 @@ function handleDungeonHotkeys(){
   }
 }
 
+// Fight HUD: angel hearts under the score, wave counter at the top, dodge/special bars under the player.
+const heartsEl=$('#hearts'),waveEl=$('#wave'),pbarsEl=$('#pbars'),dodgeFill=$('#pbars .dodge i'),specialFill=$('#pbars .special i'),feet=new T.Vector3()
+let heartsKey='',fightHudShown=false
+function showFightHud(on){
+  if(on===fightHudShown)return;fightHudShown=on
+  heartsEl.hidden=waveEl.hidden=pbarsEl.hidden=!on;document.body.classList.toggle('fighting',on)
+  if(!on)heartsKey=''
+}
+function drawHearts(){
+  const key=combat.hp+'/'+combat.maxHp+'+'+combat.overheal;if(key===heartsKey)return
+  const [oldHp,,oldOver]=heartsKey?heartsKey.split(/[/+]/).map(Number):[combat.hp,0,combat.overheal]
+  heartsKey=key;heartsEl.replaceChildren()
+  for(let i=0;i<combat.maxHp+combat.overheal;i++){
+    const h=document.createElement('i')
+    h.className='heart '+(i>=combat.maxHp?'over':i<combat.hp?'full':'broken')
+    if(i<combat.maxHp && i>=combat.hp && i<oldHp)h.classList.add('crack')                // just broke
+    if((i<combat.maxHp && i<combat.hp && i>=oldHp) || (i>=combat.maxHp+oldOver))h.classList.add('pop') // just healed
+    heartsEl.append(h)
+  }
+}
+function drawFightHud(){
+  drawHearts()
+  const w=combat.waves,boss=w.bossActive
+  $('#wave-label').textContent=boss?'GUARDIAN':'WAVE'
+  $('#wave-count').textContent=boss?cfg.guardian:`${Math.max(1,w.current)} / ${w.total}`
+  const pips=$('#wave-pips')
+  if(pips.childElementCount!==w.total)pips.replaceChildren(...Array.from({length:w.total},()=>document.createElement('i')))
+  ;[...pips.children].forEach((p,i)=>p.className=boss||i<w.current-1?'done':i===w.current-1?'now':'')
+  feet.copy(player.position).project(camera)
+  pbarsEl.style.left=(feet.x+1)/2*innerWidth+'px';pbarsEl.style.top=(1-feet.y)/2*innerHeight+8+'px'
+  dodgeFill.style.width=100*(1-Math.min(1,combat.cooldown))+'%'
+  specialFill.style.width=100*(1-combat.specialCooldown/combat.specialMaxCd)+'%'
+}
 // Damage popups: the red_nacho icon and the damage number rise from where an enemy was hit, then fade.
 const popupLayer=$('#popups'),popupPos=new T.Vector3()
 function showHits(hits){
@@ -488,21 +522,17 @@ function dungeon(dt){
       loot.rotation.y+=dt*2
     }
     const aliveMobs=combat.enemies.filter(e=>e.alive).length
-    const titleLabel=combat.waves.bossActive?cfg.guardian:`Wave ${Math.max(1,combat.waves.current)} / ${combat.waves.total}`
-    const hpMeter=meter('Vitality',100*combat.hp/progress.maxHp,`${Math.ceil(combat.hp)} / ${progress.maxHp}`,'vitality')
+    const titleLabel=combat.waves.bossActive?cfg.guardian:'Survive the waves'
     const targetMeter=combat.waves.bossActive
       ?meter('Guardian',100*combat.bossHp/cfg.hp,`${Math.ceil(combat.bossHp)} / ${cfg.hp}`,'boss')
       :meter('Hostiles',100*Math.min(1,aliveMobs/4),`${aliveMobs} left`,'boss')
-    const specialPct=100*(1-combat.specialCooldown/combat.specialMaxCd)
-    const specialMeter=meter('Special [RMB]',specialPct,combat.specialReady?'Ready':`${combat.specialCooldown.toFixed(1)}s`,'dodge')
-    const dodgeMeter=meter('Dodge',100*(1-combat.cooldown),combat.cooldown<=0?'Ready':`${combat.cooldown.toFixed(1)}s`,'dodge')
     const defaultTip=combat.waves.bossActive && combat.bossHp===0 && aliveMobs
       ?`Guardian down · ${aliveMobs} ${aliveMobs===1?'hostile':'hostiles'} remaining`
       :combat.waves.bossActive && combat.bossHp>0 && combat.phase==='wind'
       ?(combat.key==='slam'?'Ground slam — clear the circle':'Heavy swing — dodge')
       :(aliveMobs?`${aliveMobs} hostiles remaining`:'Next wave incoming…')
-    bars(titleLabel,cfg.name,hpMeter+targetMeter+specialMeter+dodgeMeter,bannerTimer>0?hint.textContent:defaultTip)
-    if(combat.cleared){player.visible=true;score+=500;showScore(true);set('collapse')}
+    bars(titleLabel,cfg.name,targetMeter,bannerTimer>0?hint.textContent:defaultTip)
+    if(combat.cleared){player.visible=true;progress.overheal=0;score+=500;showScore(true);set('collapse')}
     else if(!combat.hp){player.visible=true;retries++;progress.potions=progress.entryPotions;set('defeat');hint.textContent='You fell · Restarting the encounter'}
   }else if(state==='defeat'){if(age>1.4)encounter()}
   else if(state==='collapse'){
@@ -622,7 +652,9 @@ Promise.all([rocksReady,pillarsReady,wardensReady,weaponsReady,hedgesReady,fores
   let prev=performance.now()
   renderer.setAnimationLoop(now=>{
     const dt=Math.min(.05,Math.max(0,(now-prev)/1000));prev=now
-    update(dt);updatePlayerAnimation(dt);showProgress(['run','fall'].includes(state));if(state!=='pause')frameCamera(dt)
+    update(dt);updatePlayerAnimation(dt);showProgress(['run','fall'].includes(state))
+    const fighting=!!combat && room.visible && !['pause','shop','title','victory'].includes(state);showFightHud(fighting);if(fighting)drawFightHud()
+    if(state!=='pause')frameCamera(dt)
     if(cfg.forest)updateForestWater(clock)
     if(cfg.celestial)updateCloudDeck(clock)
     if(cfg.infernal)updateInfernalLava(clock)
