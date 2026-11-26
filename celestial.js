@@ -130,17 +130,3 @@ export function celestialCloudDeck(parent,x,z,width,depth){
   parent.add(deck)
 }
 export function updateCloudDeck(time){cloudTime.value=time}
-
-export const celestialPathMaterial=new T.MeshStandardMaterial({color:0xc3c4c2,roughness:.83})
-celestialPathMaterial.onBeforeCompile=shader=>{
-  shader.vertexShader='varying vec2 marblePoint;\n'+shader.vertexShader.replace(
-    '#include <begin_vertex>','#include <begin_vertex>\nmarblePoint=(modelMatrix*vec4(position,1.0)).xz;'
-  )
-  shader.fragmentShader='varying vec2 marblePoint;\n'+shader.fragmentShader.replace('#include <color_fragment>',`
-    #include <color_fragment>
-    vec2 p=marblePoint;
-    float flow=p.x*.75+p.y*.32+sin(p.y*.41)*1.3+sin(p.x*.84+p.y*.38)*.49;
-    float vein=smoothstep(.90,.995,sin(flow))*(.55+.45*sin(p.y*.79+p.x));
-    diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.39,.43,.54),vein*.28);
-  `)
-}

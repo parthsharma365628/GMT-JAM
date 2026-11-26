@@ -2,9 +2,10 @@ import * as T from 'three'
 import {volcanicRock} from './rocks.js'
 import {fingerPillar} from './pillars.js'
 import {hedge} from './hedges.js'
-import {forestPathMaterial,forestTree,forestWater} from './forest.js'
-import {celestialCloud,celestialCloudDeck,celestialPathMaterial,celestialPillar} from './celestial.js'
+import {forestTree,forestWater} from './forest.js'
+import {celestialCloud,celestialCloudDeck,celestialPillar} from './celestial.js'
 import {infernalLava,infernalShrine} from './inferno.js'
+import {marbleFloor,realmFloor,redCarpet} from './terrain.js'
 const cube = new T.BoxGeometry()
 const materials = new Map()
 export function box(parent,x,y,z,w,h,d,color) {
@@ -76,10 +77,6 @@ function layout(cfg,route){
   return {pieces,end:d,endPos:pos.clone(),endHeading:h}
 }
 const railColor=cfg=>cfg.celestial?0xd6ae6e:cfg.forest?0x816148:0xc47b54
-function styleTrack(ground,cfg){
-  if(cfg.celestial)ground.material=celestialPathMaterial
-  else if(cfg.forest)ground.material=forestPathMaterial
-}
 function curve(root,p,cfg){
   const n=Math.max(2,Math.ceil(Math.abs(p.turn)/(Math.PI/36))),step=p.length/n,sg=Math.sign(p.turn),v=new T.Vector3()
   const arcDepth=lat=>(TURN_RADIUS+sg*lat)*Math.abs(p.turn)/n*1.15+.1
@@ -87,7 +84,7 @@ function curve(root,p,cfg){
     const h=sample(p,(k+.5)*step,0,v)
     const ground=box(root,v.x,-.6,v.z,9,1.2,arcDepth(-sg*4.5),cfg.stone)
     ground.rotation.y=h
-    styleTrack(ground,cfg)
+    ground.material=realmFloor(cfg)
     for(const s of [-1,1]){sample(p,(k+.5)*step,s*4.3,v);box(root,v.x,.07,v.z,.25,.14,arcDepth(s*4.3),railColor(cfg)).rotation.y=h}
   }
 }
@@ -100,7 +97,7 @@ export function runner(root,cfg,route){
     const g=new T.Group(); root.add(g); g.position.copy(piece.p0); g.rotation.y=piece.h0
     const floor=(a,b)=>{
       const ground=box(g,0,-.6,-(a+b)/2,9,1.2,b-a,cfg.stone)
-      styleTrack(ground,cfg)
+      ground.material=realmFloor(cfg)
     }
     if(type==='gap'){
       floor(0,middle);floor(middle+3,length)
@@ -123,7 +120,7 @@ export function runner(root,cfg,route){
       }else if(cfg.forest){
         const seed=piece.d0*4+k
         forestTree(g,side*(7.4+k*.19),z,seed)
-        forestTree(g,side*(12+(k%3)*1.34),z-2.6,seed+5,true)
+        forestTree(g,side*(12+(k%3)*1.34),z-2.6,seed+5,{background:true})
       }else if(!fingerPillar(g,side,z,piece.d0*4+k)){
         box(g,side*6,1,z,1.5,5+k,1.6,0x472c37).rotation.z=side*.16
       }
@@ -223,17 +220,40 @@ function arch(g,z,celestial=false){
   box(g,0,6,z,7.2,1.2,1.7,celestial?0xc7ad81:0xa68570)
 }
 export function arena(g,cfg){
-  box(g,0,-.5,0,60,1,60,cfg.stone)
+  box(g,0,-.5,0,60,1,60,cfg.stone).material=realmFloor(cfg)
   if(cfg.infernal){
     infernalLava(g,0,0,170,170)
     infernalShrine(g,-33,-25,.49,2.45)
     infernalShrine(g,34,-26,-.39,2.05)
     infernalShrine(g,-35,21,1.17,1.7)
-  }
-  for(const s of [-1,1])for(const t of [-1,1]){
-    if(cfg.celestial)celestialPillar(g,s*17,0,t*17,1.65,5.8)
-    else box(g,s*17,2,t*17,1,4,1,0x937668)
-  }
+  }else if(cfg.forest)forestWater(g,0,0,170,170)
+  else if(cfg.celestial)celestialCloudDeck(g,0,0,210,210)
+
+  const scenery=[[-23,-20],[-26,-4],[-22,19],[22,-22],[25,-8],[23,16]]
+  const solids=[]
+  scenery.forEach(([x,z],i)=>{
+    if(cfg.forest){
+      forestTree(g,x,z,31+i*13,{grounded:true,scale:.68+(i%3)*.09})
+      solids.push({x,z,r:.55})
+    }else if(cfg.celestial){
+      const width=1.55+(i%3)*.23
+      celestialPillar(g,x,0,z,width,5.6+(i%3)*1.1,i*.83)
+      solids.push({x,z,r:width*.49})
+    }
+  })
+
+  // Leave the central lane and both doors open, with hazards on either flank.
+  const hazardGroup=new T.Group(),hazards=[]
+  g.add(hazardGroup)
+  const positions=[[-12,12],[10,17],[-17,-1],[13,3],[-10,-13],[17,-14],[-17,-22],[8,-23]]
+  positions.forEach(([x,z],i)=>{
+    const width=3.15+(i%4)*.46,height=1.35+(i%3)*.31,depth=2.4+(i%3)*.47
+    if(cfg.celestial)celestialCloud(hazardGroup,x,-.04,z,width,height,depth,i%2===0)
+    else if(cfg.forest){
+      if(!hedge(hazardGroup,x,z,width,height,depth,i%2===0))box(hazardGroup,x,height/2,z,width,height,depth,0x39472e)
+    }else volcanicRock(hazardGroup,x,-.04,z,width,height,depth,i)
+    hazards.push({x,z,rx:width*.46,rz:depth*.46})
+  })
   arch(g,-30,cfg.celestial)
   const door=box(g,0,2.5,-30,5,5,.8,cfg.celestial?0xc09a66:0x834e43)
   const entry=box(g,0,2,30,6,4,.65,cfg.celestial?0xb5b0a1:0x675465)
@@ -244,12 +264,14 @@ export function arena(g,cfg){
   box(stall,0,3.15,-.3,3.6,.22,2.1,0x9e342b)
   const orb=new T.Mesh(gemGeo,gemMat); orb.position.set(0,1.75,0); stall.add(orb)
   stall.userData.orb=orb
-  return {door,entry,stall}
+  return {door,entry,stall,hazardGroup,hazards,solids}
 }
 export function heaven(g){
   celestialCloudDeck(g,0,-47,240,250)
+  box(g,0,.014,-49.5,3.3,.028,99,0x982238).material=redCarpet
+  for(const s of [-1,1])box(g,s*1.55,.03,-49.5,.045,.009,99,0xd7a754)
   for(let i=0;i<26;i++){
-    box(g,0,-.5,-i*4,6,1,4,0xfff4d6).material=celestialPathMaterial
+    box(g,0,-.5,-i*4,6,1,4,0xfff4d6).material=marbleFloor
     for(const s of [-1,1]){
       if(i%3===0)celestialPillar(g,s*4.5,-2.6,-i*4,1.9,7.4,i*.6)
       if(i%2===0)celestialCloud(g,s*(8+i%5),-7,-i*4,12,4.5,9,i%3===0,true)

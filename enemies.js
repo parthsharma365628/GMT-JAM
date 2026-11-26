@@ -204,11 +204,12 @@ export class Enemy{
     const distance=diff.length()
     const w=this.weapon
     const {x,z}=pos
+    const speed=this.spec.speed*combat.elements.speed(this)
 
     if(this.type==='shooter'){
-      this.updateShooter(dt,player,combat,diff,distance,w)
+      this.updateShooter(dt,player,combat,diff,distance,w,speed)
     }else{
-      this.updateMelee(dt,player,combat,diff,distance,w)
+      this.updateMelee(dt,player,combat,diff,distance,w,speed)
     }
     if(this.animate&&!this.castTip){
       if(this.phase==='wind')this.animate(dt,'attack_1',.24*(1-this.time/this.spec.wind),true)
@@ -218,12 +219,12 @@ export class Enemy{
       }else this.animate(dt,pos.x!==x||pos.z!==z?'walk':'idle',0,true)
     }
   }
-  updateMelee(dt,player,combat,diff,distance,w){
+  updateMelee(dt,player,combat,diff,distance,w,speed){
     const s=this.spec,pos=this.mesh.position
     if(this.phase==='chase'){
       face(this.mesh,diff)
       if(distance>s.attackRange){
-        pos.addScaledVector(diff.normalize(),dt*s.speed)
+        pos.addScaledVector(diff.normalize(),dt*speed)
       }else{
         this.phase='wind';this.time=s.wind
         if(this.marker){
@@ -259,15 +260,15 @@ export class Enemy{
       if(w)w.rotation.x=0
     }
   }
-  updateShooter(dt,player,combat,diff,distance,w){
+  updateShooter(dt,player,combat,diff,distance,w,speed){
     const s=this.spec,pos=this.mesh.position
     const {x,z}=pos
     face(this.mesh,diff)
     if(this.phase==='chase'){
       if(distance>s.preferredMax){
-        pos.addScaledVector(diff.normalize(),dt*s.speed)
+        pos.addScaledVector(diff.normalize(),dt*speed)
       }else if(distance<s.preferredMin){
-        pos.addScaledVector(diff.normalize(),-dt*s.speed*.85)
+        pos.addScaledVector(diff.normalize(),-dt*speed*.85)
       }else{
         this.phase='wind';this.time=s.wind
       }

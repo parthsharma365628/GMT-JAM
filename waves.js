@@ -7,14 +7,12 @@ const DEFAULT_WAVES=[
   {boss:true,enemies:['rusher','rusher']}
 ]
 
-const PILLARS=[{x:-17,z:-17},{x:-17,z:17},{x:17,z:-17},{x:17,z:17}]
-
-function pickSpawnPoint(playerPos,taken){
+function pickSpawnPoint(playerPos,taken,obstacles){
   for(let attempt=0;attempt<40;attempt++){
     const x=(Math.random()*2-1)*24
     const z=(Math.random()*2-1)*24
     if(Math.hypot(x-playerPos.x,z-playerPos.z)<7.5)continue
-    if(PILLARS.some(p=>Math.hypot(x-p.x,z-p.z)<2.8))continue
+    if(obstacles.some(p=>Math.hypot(x-p.x,z-p.z)<p.r+1.3))continue
     if(taken.some(p=>Math.hypot(x-p.x,z-p.z)<2.2))continue
     return {x,z}
   }
@@ -22,12 +20,13 @@ function pickSpawnPoint(playerPos,taken){
 }
 
 export class WaveSpawner{
-  constructor(root,cfg,player,boss){
+  constructor(root,cfg,player,boss,solids=[],hazards=[]){
     this.root=root
     this.waves=cfg.waves??DEFAULT_WAVES
     this.wardenModels=cfg.wardenModels
     this.player=player
     this.boss=boss
+    this.obstacles=[...solids,...hazards.map(h=>({x:h.x,z:h.z,r:Math.max(h.rx,h.rz)}))]
     this.index=-1
     this.delay=0
     this.spawning=[]
@@ -46,7 +45,7 @@ export class WaveSpawner{
     const wave=this.waves[this.index]
     const taken=[]
     if(wave.boss){
-      const bp=pickSpawnPoint(this.player.position,taken)
+      const bp=pickSpawnPoint(this.player.position,taken,this.obstacles)
       taken.push(bp)
       this.boss.position.set(bp.x,0,bp.z)
       this.boss.rotation.set(0,0,0)
@@ -54,7 +53,7 @@ export class WaveSpawner{
       this.bossActive=true
     }
     for(const [variant,type] of (wave.enemies??[]).entries()){
-      const pt=pickSpawnPoint(this.player.position,taken)
+      const pt=pickSpawnPoint(this.player.position,taken,this.obstacles)
       taken.push(pt)
       const geo=new T.RingGeometry(.35,.75,24)
       geo.rotateX(-Math.PI/2)

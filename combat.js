@@ -1,6 +1,7 @@
 import * as T from 'three'
 import {axis,pressed} from './input.js'
 import {WaveSpawner} from './waves.js'
+import {HitElements} from './hit-elements.js'
 import {sword} from './world.js'
 
 const attacks={
@@ -20,7 +21,6 @@ export const DEFAULT_SPECIAL={
 }
 
 const MOVE_SPEED=5.5, DASH_SPEED=13.5, DASH_TIME=.28, COMBO_WINDOW=.65, SWITCH_LOCKOUT=2.5, ARENA_LIMIT=28.5
-const PILLARS=[{x:-17,z:-17,r:.85},{x:-17,z:17,r:.85},{x:17,z:-17,r:.85},{x:17,z:17,r:.85}]
 const projGeo=new T.SphereGeometry(.24,10,10)
 const projMat=new T.MeshBasicMaterial({color:0xff6b3d})
 const earthProjMat=new T.MeshBasicMaterial({color:0xa4f180})
@@ -30,6 +30,7 @@ const waveGeo=new T.RingGeometry(1.15,1.65,24,1,Math.PI*.22,Math.PI*.56)
 waveGeo.rotateX(-Math.PI/2)
 
 const forward=new T.Vector3(), delta=new T.Vector3(), sep=new T.Vector3()
+const noKnockback=new T.Vector3()
 
 export function equipWeaponMesh(actor,weapon){
   const mount=actor.userData.weapon
@@ -49,8 +50,8 @@ function turnToward(model,dir,rate,dt){
 }
 function facing(model){return forward.set(-Math.sin(model.rotation.y),0,-Math.cos(model.rotation.y))}
 
-function resolveArena(pos,radius){
-  for(const p of PILLARS){
+function resolveArena(pos,radius,solids){
+  for(const p of solids){
     const dx=pos.x-p.x, dz=pos.z-p.z
     const dist=Math.hypot(dx,dz), minDist=p.r+radius
     if(dist<minDist){
@@ -71,7 +72,7 @@ export class Combat{
     hitBox.setFromObject(target).getCenter(hitCenter)
     this.hits.push({x:hitCenter.x,y:hitBox.max.y,z:hitCenter.z,dmg:Math.round(dmg),heavy})
   }
-  constructor(root,player,boss,cfg,maxHp=MAX_HEARTS,weapon=null){
+  constructor(root,player,boss,cfg,maxHp=MAX_HEARTS,weapon=null,{solids=[],hazards=[]}={}){
     Object.assign(this,{
       root,player,boss,cfg,hp:maxHp,maxHp,overheal:0,bossHp:cfg.hp,phase:'chase',time:0,cycle:0,
       cooldown:0,dash:0,attack:0,immune:0,flash:0,hitstop:0,shake:0,
@@ -79,6 +80,10 @@ export class Combat{
       comboStep:0,comboTimer:0,comboBuffered:false,projFired:false
     })
     this.hits=[] // damage dealt this frame, read by main.js to show damage popups
+    this.solids=solids
+    this.hazards=hazards
+    this.hazardHit=false
+    this.elements=new HitElements(root)
     this.combo=DEFAULT_COMBO
     this.dashStrike=DEFAULT_DASH_STRIKE
     this.special=DEFAULT_SPECIAL
@@ -93,7 +98,7 @@ export class Combat{
     this.projectiles=[]
     this.playerWaves=[]
     this.hitTargets=new Set()
-    this.waves=new WaveSpawner(root,cfg,player,boss)
+    this.waves=new WaveSpawner(root,cfg,player,boss,solids,hazards)
     this.markers={}
     for(const [key,a] of Object.entries(attacks)){
       const geo=new T.CircleGeometry(a.radius,48,Math.PI/2-a.arc/2,a.arc)
@@ -294,7 +299,7 @@ export class Combat{
       }
     }
 
-    resolveArena(p.position,.45)
+    resolveArena(p.position,.45,this.solids)
     p.visible=!this.immune || Math.floor(this.immune*20)%2===0
 
     const w=p.userData.weapon
@@ -330,6 +335,7 @@ export class Combat{
         if(this.waves.bossActive && this.bossHp>0 && !this.hitTargets.has(b)){
           diffCheck(b.position,p.position,this.dir,m.range+.6,m.arc,()=>{
             this.bossHp=Math.max(0,this.bossHp-m.dmg)
+            if(this.bossHp>0)this.elements.hit(b,this.weapon?.id)
             this.reportHit(b,m.dmg,heavyMove)
             this.hitTargets.add(b)
             this.flash=.18
@@ -341,6 +347,7 @@ export class Combat{
           if(!e.alive || this.hitTargets.has(e))continue
           diffCheck(e.position,p.position,this.dir,m.range+e.radius,m.arc,()=>{
             e.takeDamage(m.dmg,this.dir,m.kb)
+            if(e.alive)this.elements.hit(e,this.weapon?.id)
             this.reportHit(e.mesh,m.dmg,heavyMove)
             this.hitTargets.add(e)
             landedAny=true
@@ -382,12 +389,22 @@ export class Combat{
     }
   }
   update(dt){
+    this.elements.update(dt,(target,damage)=>{
+      if(target===this.boss)this.bossHp=Math.max(0,this.bossHp-damage)
+      else if(target.hp<=damage)target.takeDamage(damage,noKnockback,0)
+      else target.hp-=damage
+    },target=>target===this.boss?this.bossHp>0:target.alive)
     if(this.hitstop>0){
       this.hitstop=Math.max(0,this.hitstop-dt)
       dt*=.05
     }
     this.move(dt,true)
     const b=this.boss,p=this.player
+    if(this.hazards.some(h=>Math.hypot((p.position.x-h.x)/(h.rx+.35),(p.position.z-h.z)/(h.rz+.35))<1)){
+      this.hazardHit=true
+      this.hp=this.overheal=0
+      return
+    }
 
     this.waves.update(dt,this.enemies,this.bossHp>0)
 
@@ -401,7 +418,7 @@ export class Combat{
         }
         continue
       }
-      resolveArena(e.position,e.radius)
+      resolveArena(e.position,e.radius,this.solids)
     }
     for(let i=0;i<this.enemies.length;i++){
       const a=this.enemies[i]; if(!a.alive)continue
@@ -429,7 +446,7 @@ export class Combat{
       wv.mat.opacity=Math.max(0,(wv.life/wv.maxLife)*.9)
 
       const hitWall=Math.abs(wv.mesh.position.x)>ARENA_LIMIT || Math.abs(wv.mesh.position.z)>ARENA_LIMIT
-      const hitPillar=PILLARS.some(pl=>Math.hypot(wv.mesh.position.x-pl.x,wv.mesh.position.z-pl.z)<pl.r+.4)
+      const hitPillar=this.solids.some(pl=>Math.hypot(wv.mesh.position.x-pl.x,wv.mesh.position.z-pl.z)<pl.r+.4)
       if(this.waves.bossActive && this.bossHp>0 && !wv.hit.has(b)){
         if(Math.hypot(wv.mesh.position.x-b.position.x,wv.mesh.position.z-b.position.z)<1.6){
           this.bossHp=Math.max(0,this.bossHp-wv.dmg)
@@ -460,7 +477,7 @@ export class Combat{
       pr.mesh.position.x+=pr.vx*dt
       pr.mesh.position.z+=pr.vz*dt
       const hitWall=Math.abs(pr.mesh.position.x)>ARENA_LIMIT || Math.abs(pr.mesh.position.z)>ARENA_LIMIT
-      const hitPillar=PILLARS.some(pl=>Math.hypot(pr.mesh.position.x-pl.x,pr.mesh.position.z-pl.z)<pl.r+.22)
+      const hitPillar=this.solids.some(pl=>Math.hypot(pr.mesh.position.x-pl.x,pr.mesh.position.z-pl.z)<pl.r+.22)
       let hitUnit=false
       if(pr.reflected){
         if(this.waves.bossActive && this.bossHp>0 && Math.hypot(pr.mesh.position.x-b.position.x,pr.mesh.position.z-b.position.z)<1.2){
@@ -496,7 +513,7 @@ export class Combat{
     this.bossVel.x=T.MathUtils.damp(this.bossVel.x,0,12,dt)
     this.bossVel.z=T.MathUtils.damp(this.bossVel.z,0,12,dt)
     b.position.addScaledVector(this.bossVel,dt)
-    resolveArena(b.position,.85)
+    resolveArena(b.position,.85,this.solids)
 
     this.flash=Math.max(0,this.flash-dt);b.rotation.z=this.flash*.9
     const animateBoss=b.userData.animate
@@ -504,7 +521,10 @@ export class Combat{
     if(this.phase==='chase'){
       face(b,diff)
       animateBoss?.(dt,distance>2.9?'warden_walk':'idle',0,true)
-      if(distance>2.9)b.position.addScaledVector(diff.normalize(),dt*this.cfg.chaseSpeed)
+      if(distance>2.9){
+        b.position.addScaledVector(diff.normalize(),dt*this.cfg.chaseSpeed*this.elements.speed(b))
+        resolveArena(b.position,.85,this.solids)
+      }
       else{
         this.key=this.cfg.attacks[this.cycle++%this.cfg.attacks.length]
         this.phase='wind';this.time=attacks[this.key].wind
@@ -539,6 +559,7 @@ export class Combat{
     }
   }
   dispose(){
+    this.elements.dispose()
     this.waves.dispose()
     for(const e of this.enemies)e.dispose()
     for(const pr of this.projectiles)pr.mesh.removeFromParent()

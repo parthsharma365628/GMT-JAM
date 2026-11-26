@@ -1,6 +1,8 @@
 import * as T from 'three'
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js'
 import emberUrl from './mc-sword.glb?url'
+import cinderUrl from './cinder-sword.glb?url'
+import seraphRapierUrl from './seraph-rapier.glb?url'
 import wardenUrl from './boss-sword.glb?url'
 import earthSwordUrl from './earth-sword.glb?url'
 import earthStaffUrl from './earth-staff.glb?url'
@@ -50,6 +52,8 @@ async function loadWeapon(key,url,pivot,rotation,length,sourceLength,spellTip=nu
 
 export const weaponsReady=Promise.all([
   loadWeapon('ember',emberUrl,[.585,.03,0],[0,Math.PI/2,-Math.PI/2],1.60,1.7851),
+  loadWeapon('cinder',cinderUrl,[.190,.0175,-.654],[-Math.PI/2,0,0],1.88,1.5015),
+  loadWeapon('seraphRapier',seraphRapierUrl,[0,.035,-.555],[-Math.PI/2,0,0],1.53,1.60),
   loadWeapon('warden',wardenUrl,[-.045,.03,-.435],[-Math.PI/2,0,0],1.72,1.5672),
   loadWeapon('earthSword',earthSwordUrl,[.203,.043,.72],[Math.PI/2,0,0],1.72,1.3113),
   loadWeapon('earthStaff',earthStaffUrl,[0,.016,.10],[-Math.PI/2,0,0],2.72,2.026,[0,.016,1.08]),

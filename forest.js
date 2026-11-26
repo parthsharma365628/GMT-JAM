@@ -61,16 +61,17 @@ export const forestReady=new GLTFLoader().loadAsync(treeUrl).then(({scene})=>{
   trunkMaterial=mesh.material
 }).catch(error=>console.warn('Using a simple trunk for the forest trees',error))
 
-export function forestTree(parent,x,z,seed,background=false){
+export function forestTree(parent,x,z,seed,{background=false,grounded=false,scale=1}={}){
   const tree=new T.Group()
-  const height=(background?13:11)+noise(seed)*5
+  const height=((background?13:11)+noise(seed)*5)*scale
   const width=height*(.86+noise(seed+1)*.25)
-  tree.position.set(x,-4.16,z)
+  tree.position.set(x,grounded?0:-4.16,z)
   tree.rotation.y=noise(seed+2)*Math.PI*2
   tree.scale.set(width,height,width)
   tree.add(new T.Mesh(trunkGeometry,trunkMaterial))
   tree.add(new T.Mesh(crowns[Math.floor(noise(seed+3)*crowns.length)],foliageMaterial))
   parent.add(tree)
+  if(grounded)return
   const bank=new T.Mesh(bankGeometry,bankMaterial)
   bank.position.set(x,-4.49,z)
   bank.rotation.y=tree.rotation.y
@@ -91,23 +92,6 @@ export function forestSky(){
   sky=new T.CanvasTexture(canvas)
   sky.colorSpace=T.SRGBColorSpace
   return sky
-}
-
-export const forestPathMaterial=new T.MeshStandardMaterial({color:0x706249,roughness:1})
-forestPathMaterial.onBeforeCompile=shader=>{
-  shader.vertexShader='varying vec2 pathPoint;\n'+shader.vertexShader.replace(
-    '#include <begin_vertex>','#include <begin_vertex>\npathPoint = (modelMatrix * vec4(position,1.0)).xz;'
-  )
-  shader.fragmentShader='varying vec2 pathPoint;\n'+shader.fragmentShader.replace(
-    '#include <color_fragment>',`
-    #include <color_fragment>
-    vec2 p=pathPoint;
-    float patches=sin(p.x*1.07+sin(p.y*.83))*cos(p.y*.71+sin(p.x*.45));
-    float grain=sin(p.x*33.6+p.y*17.5)*sin(p.y*41.7-p.x*25.2);
-    diffuseColor.rgb=mix(diffuseColor.rgb,vec3(.108,.124,.047),smoothstep(.2,.95,patches)*.55);
-    diffuseColor.rgb*=.94+.08*grain;
-    `
-  )
 }
 
 const waterTime={value:0}

@@ -6,6 +6,7 @@ import {animateWarden,wardensReady} from './warden-models.js'
 import {rocksReady} from './rocks.js'
 import {pillarsReady} from './pillars.js'
 import {attachWeaponModel,replaceWeaponModel,weaponsReady} from './weapon-models.js'
+import {createSwordEffects} from './sword-effects.js'
 import {hedgesReady} from './hedges.js'
 import {forestReady,forestSky,updateForestWater} from './forest.js'
 import {celestialReady,celestialSky,updateCloudDeck} from './celestial.js'
@@ -25,12 +26,14 @@ const sun=new T.DirectionalLight(0xffdcba,2.5);sun.position.set(-8,16,5);scene.a
 const group=()=>{const g=new T.Group();scene.add(g);return g}
 const track=group(),room=group(),sky=group()
 const player=actor(scene), hellBoss=actor(room,true), earthBoss=actor(room,true), heavenBoss=actor(room,true), loot=new T.Group()
+const updateSwordEffects=createSwordEffects(scene,player,renderer)
 const bosses={hell:hellBoss,earth:earthBoss,heaven:heavenBoss}
 let boss=hellBoss
 const animatePlayer=animateCharacter(player)
 const preview=import.meta.env.DEV?new URLSearchParams(location.search).get('preview'):null
+const previewSwords=preview==='hell-swords'
 const previewBossStages=new Map([
-  ['hell-boss','hell'],['middle-earth-boss','middleEarth'],['heaven-boss','heavensGate']
+  ['hell-boss','hell'],['middle-earth-boss','middleEarth'],['heaven-boss','heavensGate'],['hell-swords','hell']
 ])
 const previewBossStage=previewBossStages.get(preview)
 
@@ -55,7 +58,9 @@ let weaponCatalog=[
     ],
     dashStrike:{anim:'dash_strike',dur:.44,dmg:22,range:4.1,arc:.05,winStart:.08,winEnd:.34,step:8.5,kb:11.0,stop:.075,shake:.35},
     special:{anim:'special_slam',dur:.68,dmg:36,range:4.6,arc:-1.1,winStart:.26,winEnd:.52,step:6.5,kb:22.0,stop:.11,shake:.55,cd:2.4,deflect:true},
-    createMesh:parent=>greatsword(parent,0,0,0)
+    createMesh:parent=>{
+      if(!attachWeaponModel(parent,'cinder'))greatsword(parent)
+    }
   },
   {
     id:'seraph_rapier',name:'Seraph Rapier',unlockType:'shop',price:250,
@@ -67,7 +72,9 @@ let weaponCatalog=[
     ],
     dashStrike:{anim:'dash_strike',dur:.30,dmg:20,range:4.4,arc:.3,winStart:.04,winEnd:.24,step:11.5,kb:8.0,stop:.065,shake:.32},
     special:{anim:'special_thrust',dur:.44,dmg:28,range:5.0,arc:.35,winStart:.08,winEnd:.34,step:14.0,kb:13.0,stop:.08,shake:.38,cd:1.8,deflect:true},
-    createMesh:parent=>rapier(parent,0,0,0)
+    createMesh:parent=>{
+      if(!attachWeaponModel(parent,'seraphRapier'))rapier(parent)
+    }
   }
 ]
 export function registerWeapons(customList){
@@ -290,8 +297,9 @@ function encounter(){
   player.position.set(0,0,6);player.rotation.set(0,0,0);player.scale.set(1,1,1);player.visible=true
   boss.userData.weapon.rotation.set(0,0,0)
   doors.door.position.y=2.5;doors.entry.position.y=-2;doors.stall.visible=false
+  doors.hazardGroup.visible=true
   progress.entryPotions=progress.potions
-  combat?.dispose();combat=new Combat(room,player,boss,cfg,progress.maxHp,getWeapon(progress.equipped));combat.overheal=progress.overheal;set('intro')
+  combat?.dispose();combat=new Combat(room,player,boss,cfg,progress.maxHp,getWeapon(progress.equipped),doors);combat.overheal=progress.overheal;set('intro')
   if(previewBossStage===stageId){
     const bossWave=cfg.waves.findIndex(wave=>wave.boss)
     if(bossWave>=0){
@@ -302,7 +310,7 @@ function encounter(){
   }
 }
 function ascent(){
-  room.visible=false;sky.visible=true
+  room.visible=track.visible=false;sky.visible=true
   scene.background=celestialSky()
   scene.fog.color.setHex(stages.heavensGate.sky)
   player.position.set(0,0,0);player.rotation.set(0,0,0);set('heaven')
@@ -524,7 +532,7 @@ function dungeon(dt){
     const aliveMobs=combat.enemies.filter(e=>e.alive).length
     const titleLabel=combat.waves.bossActive?cfg.guardian:'Survive the waves'
     const targetMeter=combat.waves.bossActive
-      ?meter('Guardian',100*combat.bossHp/cfg.hp,`${Math.ceil(combat.bossHp)} / ${cfg.hp}`,'boss')
+      ?meter('Guardian',100*combat.bossHp/cfg.hp,`${Number(combat.bossHp.toFixed(1))} / ${cfg.hp}`,'boss')
       :meter('Hostiles',100*Math.min(1,aliveMobs/4),`${aliveMobs} left`,'boss')
     const defaultTip=combat.waves.bossActive && combat.bossHp===0 && aliveMobs
       ?`Guardian down · ${aliveMobs} ${aliveMobs===1?'hostile':'hostiles'} remaining`
@@ -532,8 +540,16 @@ function dungeon(dt){
       ?(combat.key==='slam'?'Ground slam — clear the circle':'Heavy swing — dodge')
       :(aliveMobs?`${aliveMobs} hostiles remaining`:'Next wave incoming…')
     bars(titleLabel,cfg.name,targetMeter,bannerTimer>0?hint.textContent:defaultTip)
-    if(combat.cleared){player.visible=true;progress.overheal=0;score+=500;showScore(true);set('collapse')}
-    else if(!combat.hp){player.visible=true;retries++;progress.potions=progress.entryPotions;set('defeat');hint.textContent='You fell · Restarting the encounter'}
+    if(!combat.hp){
+      combat.elements.dispose()
+      player.visible=true;retries++;progress.potions=progress.entryPotions;set('defeat')
+      const hazard=cfg.celestial?'cloud':cfg.forest?'bush':'volcanic rock'
+      hint.textContent=combat.hazardHit?`You hit a ${hazard} · Restarting the encounter`:'You fell · Restarting the encounter'
+    }else if(combat.cleared){
+      combat.elements.dispose()
+      doors.hazardGroup.visible=false
+      player.visible=true;progress.overheal=0;score+=500;showScore(true);set('collapse')
+    }
   }else if(state==='defeat'){if(age>1.4)encounter()}
   else if(state==='collapse'){
     if(loot.visible)loot.rotation.y+=dt*2
@@ -643,7 +659,15 @@ Promise.all([rocksReady,pillarsReady,wardensReady,weaponsReady,hedgesReady,fores
     replaceWeaponModel(guardian.userData.weapon,stage.rewardWeapon)
     guardian.userData.animate=animateWarden(name,guardian,height)
   }
-  if(previewBossStage){start(previewBossStage);encounter()}
+  if(previewBossStage){
+    start(previewBossStage)
+    if(previewSwords){
+      progress.weapons.add('cinder_greatsword').add('seraph_rapier')
+      progress.equipped='cinder_greatsword'
+    }
+    encounter()
+  }
+  else if(preview==='heaven-ascent'){start('heavensGate');ascent()}
   else if(preview==='heaven-dungeon'){start('heavensGate');encounter()}
   else if(preview==='middle-earth')start('middleEarth')
   else if(preview==='hell')start()
@@ -654,7 +678,11 @@ Promise.all([rocksReady,pillarsReady,wardensReady,weaponsReady,hedgesReady,fores
     const dt=Math.min(.05,Math.max(0,(now-prev)/1000));prev=now
     update(dt);updatePlayerAnimation(dt);showProgress(['run','fall'].includes(state))
     const fighting=!!combat && room.visible && !['pause','shop','title','victory'].includes(state);showFightHud(fighting);if(fighting)drawFightHud()
-    if(state!=='pause')frameCamera(dt)
+    if(state!=='pause'){
+      frameCamera(dt)
+      const swing=state==='combat' && combat.anim.state==='attack'?combat.anim.progress:0
+      updateSwordEffects(dt,swing)
+    }
     if(cfg.forest)updateForestWater(clock)
     if(cfg.celestial)updateCloudDeck(clock)
     if(cfg.infernal)updateInfernalLava(clock)
