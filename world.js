@@ -1,3 +1,4 @@
+import {lavaJet,goldenGate} from './lava-vents.js'
 import * as T from 'three'
 import {volcanicRock} from './rocks.js'
 import {fingerPillar} from './pillars.js'
@@ -139,9 +140,13 @@ export function runner(root,cfg,route){
       }
       hazards.push({type,d,x})
     }
-    if(type==='fire'){
-      box(g,x,.05,-middle,4,.1,2,cfg.celestial?0xb58c4a:0xc08146)
-      hazards.push({type,d,x,mesh:box(g,x,1,-middle,4,2,2,cfg.celestial?0xffbf58:0xff631d)})
+    if(type==='fire'){ // timed hazard: a lava vent in Hell, a golden gate in Heaven, the plain block elsewhere
+      if(cfg.infernal)hazards.push({type,d,x,jet:lavaJet(g,x,-middle)})
+      else if(cfg.celestial)hazards.push({type,d,x,jet:goldenGate(g,x,-middle)})
+      else{
+        box(g,x,.05,-middle,4,.1,2,0xc08146)
+        hazards.push({type,d,x,mesh:box(g,x,1,-middle,4,2,2,0xff631d)})
+      }
     }
     if(type==='hurdle'){
       box(g,0,.55,-middle,9,1.1,.6,cfg.celestial?0xaf987a:cfg.forest?0x66513b:0x8c3b2e)

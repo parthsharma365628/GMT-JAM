@@ -506,8 +506,11 @@ function run(dt){
   for(const h of route.hazards){
     const rel=dist-h.d,cycle=(clock+h.d)%3.5,near=Math.abs(rel)
     if(h.type==='fire'){
-      const size=cycle>2.2?2.6:cycle>1.5?.33:.06
-      h.mesh.scale.y=size;h.mesh.position.y=size/2+.1
+      if(h.jet){if(near<80)h.jet.update(dt,cycle)} // lava vent / golden gate animate on the same cycle as the collision check
+      else{
+        const size=cycle>2.2?2.6:cycle>1.5?.33:.06
+        h.mesh.scale.y=size;h.mesh.position.y=size/2+.1
+      }
     }
     if(h.type==='pendulum'){h.angle=.9*Math.sin(clock*2.4+h.d);h.mesh.rotation.z=h.angle}
     if((h.type==='gap' && rel>.35 && rel<2.65 && !height) ||
