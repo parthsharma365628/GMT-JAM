@@ -2,10 +2,12 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js'
 import {animateCharacter} from './character.js'
 import hellUrl from './hell-warden.glb?url'
 import earthUrl from './earth-boss.glb?url'
+import heavenUrl from './heaven-boss.glb?url'
 
 const wardens={
   hell:{url:hellUrl,colors:{rusher:[0xffb89b,0xd997af],shooter:[0xc5b6ff],brute:[0xffce91]}},
-  earth:{url:earthUrl,colors:{rusher:[0xe8efd3,0xc9dbac],shooter:[0xbacfe8],brute:[0xf2d1a5]}}
+  earth:{url:earthUrl,colors:{rusher:[0xe8efd3,0xc9dbac],shooter:[0xbacfe8],brute:[0xf2d1a5]},weaponScales:[.60,.54]},
+  heaven:{url:heavenUrl,colors:{rusher:[0xf7e3be,0xf0cade],shooter:[0xcddcff,0xe1d2f8],brute:[0xffdfbc]},weaponScales:[.43,.41]}
 }
 const materials=new Map()
 const loader=new GLTFLoader()
@@ -20,7 +22,7 @@ export const wardensReady=Promise.all(Object.entries(wardens).map(async ([name,w
 }))
 
 export function animateWarden(name,actor,height,type,variant=0){
-  const {template,colors}=wardens[name]
+  const {template,colors,weaponScales}=wardens[name]
   if(!template)return null
   const palette=colors[type]
   const tint=palette?.[variant%palette.length]
@@ -40,6 +42,6 @@ export function animateWarden(name,actor,height,type,variant=0){
     template,targetHeight:height,materialFor,
     crossGrip:type!=='shooter'||fittedStaff,
     wardenFist:type===undefined||fittedSword||fittedStaff||(name==='earth'&&type!=='shooter'),
-    weaponScale:name==='earth'?(type===undefined?.60:.54):undefined
+    weaponScale:weaponScales?.[type===undefined?0:1]
   })
 }

@@ -1,7 +1,8 @@
 export const stages = {
   hell: {
     name: 'Hell · The Infernal Depths',
-    sky: 0x381824, stone: 0x4f414d,
+    infernal: true,
+    sky: 0x302a3b, stone: 0x4f414d,
     speed: 9, topSpeed: 24,
     segments: 55,
     gapStart: 4,
@@ -49,6 +50,7 @@ export const stages = {
     segmentLength: 15,
     guardian: 'Warden of the Wastes', hp: 120, damage: 22,
     wardenModels: 'earth',
+    dropRewardOnDefeat: true,
     chaseSpeed: 2.6, attacks: ['swing','slam'],
     waves: [
       { enemies: ['rusher','shooter','brute'] },
@@ -60,9 +62,9 @@ export const stages = {
   },
 
   heavensGate: {
-    name: 'Heaven\'s Gate · Empyrean Threshold (Placeholder)',
-    placeholder: true,
-    sky: 0x4a3b2c, stone: 0x8c7b6b,
+    name: 'Heaven\'s Gate · Empyrean Threshold',
+    celestial: true,
+    sky: 0xd4e0f1, stone: 0xc3c4c2,
     speed: 12, topSpeed: 26,
     segments: 18,
     gapStart: 3,
@@ -76,13 +78,16 @@ export const stages = {
     embers: { chance: 0.85, value: 75 },
     boxes: { chance: 0.25 },
     segmentLength: 15,
-    guardian: 'Seraphic Gatekeeper (Placeholder)', hp: 145, damage: 25,
+    guardian: 'Seraphic Gatekeeper', hp: 145, damage: 25,
+    wardenModels: 'heaven',
+    dropRewardOnDefeat: true,
     chaseSpeed: 2.8, attacks: ['swing','slam'],
     waves: [
       { enemies: ['brute','shooter','shooter'] },
       { boss: true, enemies: ['brute','rusher'] }
     ],
     sword: 'Crownblade of Heaven',
+    rewardWeapon: 'heavenSword',
     next: null
   }
 }

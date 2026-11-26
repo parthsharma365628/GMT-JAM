@@ -11,7 +11,13 @@ const spellOrigin=new T.Vector3(), spellDirection=new T.Vector3()
 const spellGlowGeometry=new T.IcosahedronGeometry(.14,1)
 const spellGlowMaterials={
   hell:new T.MeshBasicMaterial({color:0xff713d}),
-  earth:new T.MeshBasicMaterial({color:0xb0fb91})
+  earth:new T.MeshBasicMaterial({color:0xb0fb91}),
+  heaven:new T.MeshBasicMaterial({color:0x9debff})
+}
+const wardenWeapons={
+  hell:{sword:'warden',staff:'hellStaff'},
+  earth:{sword:'earthSword',staff:'earthStaff'},
+  heaven:{sword:'heavenSword',staff:'heavenStaff'}
 }
 
 function face(model,dir){model.rotation.y=Math.atan2(-dir.x,-dir.z)}
@@ -129,8 +135,9 @@ export class Enemy{
     root.add(this.mesh)
     if(wardenModel){
       const weapon=spec.build(this.mesh).userData.weapon
-      if(typeKey==='shooter')replaceWeaponModel(weapon,wardenModel==='hell'?'hellStaff':'earthStaff')
-      else replaceWeaponModel(weapon,wardenModel==='hell'?'warden':'earthSword',.85)
+      const models=wardenWeapons[wardenModel]
+      if(typeKey==='shooter')replaceWeaponModel(weapon,models.staff)
+      else replaceWeaponModel(weapon,models.sword,.85)
       this.mesh.userData.weapon=weapon
       this.animate=animateWarden(wardenModel,this.mesh,spec.height,typeKey,variant)
       this.castTip=weapon.getObjectByName('spell-origin')

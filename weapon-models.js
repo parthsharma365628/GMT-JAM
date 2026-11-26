@@ -5,6 +5,8 @@ import wardenUrl from './boss-sword.glb?url'
 import earthSwordUrl from './earth-sword.glb?url'
 import earthStaffUrl from './earth-staff.glb?url'
 import hellStaffUrl from './hell-staff.glb?url'
+import heavenSwordUrl from './heaven-sword.glb?url'
+import heavenStaffUrl from './heaven-staff.glb?url'
 
 const loader=new GLTFLoader()
 const models=new Map()
@@ -51,7 +53,9 @@ export const weaponsReady=Promise.all([
   loadWeapon('warden',wardenUrl,[-.045,.03,-.435],[-Math.PI/2,0,0],1.72,1.5672),
   loadWeapon('earthSword',earthSwordUrl,[.203,.043,.72],[Math.PI/2,0,0],1.72,1.3113),
   loadWeapon('earthStaff',earthStaffUrl,[0,.016,.10],[-Math.PI/2,0,0],2.72,2.026,[0,.016,1.08]),
-  loadWeapon('hellStaff',hellStaffUrl,[0,-.95,0],[0,0,0],2.79,2.316,[0,.208,0])
+  loadWeapon('hellStaff',hellStaffUrl,[0,-.95,0],[0,0,0],2.79,2.316,[0,.208,0]),
+  loadWeapon('heavenSword',heavenSwordUrl,[-.0072,.026,.649],[Math.PI/2,0,0],1.74,1.76),
+  loadWeapon('heavenStaff',heavenStaffUrl,[.1578,.98,-2.1748],[0,0,0],2.65,1.993,[.1578,1.933,-2.1748])
 ])
 
 export function attachWeaponModel(parent,key,scale=1){

@@ -8,6 +8,8 @@ import {pillarsReady} from './pillars.js'
 import {attachWeaponModel,replaceWeaponModel,weaponsReady} from './weapon-models.js'
 import {hedgesReady} from './hedges.js'
 import {forestReady,forestSky,updateForestWater} from './forest.js'
+import {celestialReady,celestialSky,updateCloudDeck} from './celestial.js'
+import {infernoReady,infernalSky,updateInfernalLava} from './inferno.js'
 import {stages,generateRoute} from './stage.js'
 import {axis,pressed,held} from './input.js'
 import {playCutscene} from './cutscene.js'
@@ -21,13 +23,16 @@ resize();addEventListener('resize',resize)
 const light=new T.HemisphereLight(0xffe8ce,0xbc7773,2.1);scene.add(light)
 const sun=new T.DirectionalLight(0xffdcba,2.5);sun.position.set(-8,16,5);scene.add(sun)
 const group=()=>{const g=new T.Group();scene.add(g);return g}
-const track=group(),room=group(),sky=group();heaven(sky)
-const player=actor(scene), hellBoss=actor(room,true), earthBoss=actor(room,true), otherBoss=actor(room,true), loot=new T.Group()
-const bosses={hell:hellBoss,earth:earthBoss}
+const track=group(),room=group(),sky=group()
+const player=actor(scene), hellBoss=actor(room,true), earthBoss=actor(room,true), heavenBoss=actor(room,true), loot=new T.Group()
+const bosses={hell:hellBoss,earth:earthBoss,heaven:heavenBoss}
 let boss=hellBoss
 const animatePlayer=animateCharacter(player)
 const preview=import.meta.env.DEV?new URLSearchParams(location.search).get('preview'):null
-const previewBossStage=preview==='hell-boss'?'hell':preview==='middle-earth-boss'?'middleEarth':null
+const previewBossStages=new Map([
+  ['hell-boss','hell'],['middle-earth-boss','middleEarth'],['heaven-boss','heavensGate']
+])
+const previewBossStage=previewBossStages.get(preview)
 
 // --- WEAPON CATALOG ADAPTER (Teammate's weapons.js plugs in via registerWeapons) ---
 let weaponCatalog=[
@@ -211,20 +216,20 @@ function load(id){
   combat?.dispose();track.clear();room.clear()
   stageId=id;cfg=stages[id]
   progress.entryWeapon=progress.equipped
-  boss=bosses[cfg.wardenModels]??otherBoss
+  boss=bosses[cfg.wardenModels]
   loot.clear()
   loot.rotation.set(0,0,0)
   loot.visible=false
   if(!cfg.rewardWeapon||!attachWeaponModel(loot,cfg.rewardWeapon,1.2))sword(loot)
   room.add(boss,loot)
   route=runner(track,cfg,generateRoute(cfg));doors=arena(room,cfg)
-  scene.background=cfg.forest?forestSky():new T.Color(cfg.sky)
-  scene.fog=new T.FogExp2(cfg.sky,cfg.forest?.025:.017)
-  light.color.setHex(cfg.forest?0xf0ebc9:0xffe8ce)
-  light.groundColor.setHex(cfg.forest?0x60744c:0xbc7773)
-  light.intensity=cfg.forest?1.65:2.1
-  sun.color.setHex(cfg.forest?0xf7e8ad:0xffdcba)
-  sun.intensity=cfg.forest?2.05:2.5
+  scene.background=cfg.infernal?infernalSky():cfg.celestial?celestialSky():cfg.forest?forestSky():new T.Color(cfg.sky)
+  scene.fog=new T.FogExp2(cfg.sky,cfg.infernal?.014:cfg.celestial?.018:cfg.forest?.025:.017)
+  light.color.setHex(cfg.celestial?0xf6f4ff:cfg.forest?0xf0ebc9:0xffe8ce)
+  light.groundColor.setHex(cfg.celestial?0x9dadda:cfg.forest?0x60744c:0xbc7773)
+  light.intensity=cfg.celestial?1.34:cfg.forest?1.65:2.1
+  sun.color.setHex(cfg.celestial?0xffeac9:cfg.forest?0xf7e8ad:0xffdcba)
+  sun.intensity=cfg.celestial?1.56:cfg.forest?2.05:2.5
   stageScore=score;stageEmbers=embers;checkpoint=clock=best=0;resetRunner();set('run')
 }
 const JUMP=13, RISE_GRAVITY=38, FALL_GRAVITY=52, JUMP_BUFFER=.15
@@ -295,7 +300,12 @@ function encounter(){
     }
   }
 }
-function ascent(){room.visible=false;sky.visible=true;player.position.set(0,0,0);player.rotation.set(0,0,0);set('heaven')}
+function ascent(){
+  room.visible=false;sky.visible=true
+  scene.background=celestialSky()
+  scene.fog.color.setHex(stages.heavensGate.sky)
+  player.position.set(0,0,0);player.rotation.set(0,0,0);set('heaven')
+}
 function pause(){
   if(state==='shop')closeShop()
   prior={state,age};set('pause')
@@ -473,7 +483,7 @@ function dungeon(dt){
   }else if(state==='combat'){
     combat.update(dt)
     showHits(combat.hits);combat.hits.length=0
-    if(cfg.wardenModels==='earth' && combat.waves.bossActive && combat.bossHp===0){
+    if(cfg.dropRewardOnDefeat && combat.waves.bossActive && combat.bossHp===0){
       dropGuardianSword()
       loot.rotation.y+=dt*2
     }
@@ -547,7 +557,6 @@ function update(dt){
   else if(state==='fall'){player.position.y-=dt*2;if(age>.7){resetRunner(true);set('run')}}
   else if(state==='heaven'){
     player.position.z-=dt*4
-    scene.background.lerp(new T.Color(0xb6deee),1-Math.exp(-dt));scene.fog.color.copy(scene.background)
     bars('The last ascent','Follow the light','',age<4?'The way is open':'')
     if(-player.position.z>=99){
       set('victory');panel('You Reached<br><i>Heaven</i>',[...progress.swords].join(' · ')+'\n'+'Score '+score+' · '+embers+' embers\n'+Math.floor(elapsed/60)+'m '+Math.floor(elapsed%60)+'s   ·   '+retries+' retries',[['Restart',start],['Return to title',title]])
@@ -596,20 +605,27 @@ function updatePlayerAnimation(dt){
   }else animatePlayer(dt,'idle',0,inCombat)
 }
 
-Promise.all([rocksReady,pillarsReady,wardensReady,weaponsReady,hedgesReady,forestReady]).then(()=>{
-  for(const [actor,key] of [[player,'ember'],[hellBoss,'warden'],[earthBoss,'earthSword']]){
-    replaceWeaponModel(actor.userData.weapon,key)
+Promise.all([rocksReady,pillarsReady,wardensReady,weaponsReady,hedgesReady,forestReady,celestialReady,infernoReady]).then(()=>{
+  heaven(sky)
+  replaceWeaponModel(player.userData.weapon,'ember')
+  for(const [name,stage,height] of [['hell',stages.hell,2.35],['earth',stages.middleEarth,2.25],['heaven',stages.heavensGate,2.18]]){
+    const guardian=bosses[name]
+    replaceWeaponModel(guardian.userData.weapon,stage.rewardWeapon)
+    guardian.userData.animate=animateWarden(name,guardian,height)
   }
-  hellBoss.userData.animate=animateWarden('hell',hellBoss,2.35)
-  earthBoss.userData.animate=animateWarden('earth',earthBoss,2.25)
   if(previewBossStage){start(previewBossStage);encounter()}
+  else if(preview==='heaven-dungeon'){start('heavensGate');encounter()}
   else if(preview==='middle-earth')start('middleEarth')
+  else if(preview==='hell')start()
+  else if(preview==='heaven')start('heavensGate')
   else title()
   let prev=performance.now()
   renderer.setAnimationLoop(now=>{
     const dt=Math.min(.05,Math.max(0,(now-prev)/1000));prev=now
     update(dt);updatePlayerAnimation(dt);showProgress(['run','fall'].includes(state));if(state!=='pause')frameCamera(dt)
     if(cfg.forest)updateForestWater(clock)
+    if(cfg.celestial)updateCloudDeck(clock)
+    if(cfg.infernal)updateInfernalLava(clock)
     pressed.clear();renderer.render(scene,camera)
   })
   window.addEventListener('blur',()=>{held.clear();if(!['title','victory','pause'].includes(state))pause()})

@@ -3,6 +3,8 @@ import {volcanicRock} from './rocks.js'
 import {fingerPillar} from './pillars.js'
 import {hedge} from './hedges.js'
 import {forestPathMaterial,forestTree,forestWater} from './forest.js'
+import {celestialCloud,celestialCloudDeck,celestialPathMaterial,celestialPillar} from './celestial.js'
+import {infernalLava,infernalShrine} from './inferno.js'
 const cube = new T.BoxGeometry()
 const materials = new Map()
 export function box(parent,x,y,z,w,h,d,color) {
@@ -73,6 +75,11 @@ function layout(cfg,route){
   })
   return {pieces,end:d,endPos:pos.clone(),endHeading:h}
 }
+const railColor=cfg=>cfg.celestial?0xd6ae6e:cfg.forest?0x816148:0xc47b54
+function styleTrack(ground,cfg){
+  if(cfg.celestial)ground.material=celestialPathMaterial
+  else if(cfg.forest)ground.material=forestPathMaterial
+}
 function curve(root,p,cfg){
   const n=Math.max(2,Math.ceil(Math.abs(p.turn)/(Math.PI/36))),step=p.length/n,sg=Math.sign(p.turn),v=new T.Vector3()
   const arcDepth=lat=>(TURN_RADIUS+sg*lat)*Math.abs(p.turn)/n*1.15+.1
@@ -80,41 +87,53 @@ function curve(root,p,cfg){
     const h=sample(p,(k+.5)*step,0,v)
     const ground=box(root,v.x,-.6,v.z,9,1.2,arcDepth(-sg*4.5),cfg.stone)
     ground.rotation.y=h
-    if(cfg.forest)ground.material=forestPathMaterial
-    for(const s of [-1,1]){sample(p,(k+.5)*step,s*4.3,v);box(root,v.x,.07,v.z,.25,.14,arcDepth(s*4.3),cfg.forest?0x816148:0xc47b54).rotation.y=h}
+    styleTrack(ground,cfg)
+    for(const s of [-1,1]){sample(p,(k+.5)*step,s*4.3,v);box(root,v.x,.07,v.z,.25,.14,arcDepth(s*4.3),railColor(cfg)).rotation.y=h}
   }
 }
 export function runner(root,cfg,route){
   const hazards=[], pickups=[], boxes=[], length=cfg.segmentLength, middle=length/2
   const {pieces,end,endPos,endHeading}=layout(cfg,route)
-  for(const piece of pieces){
+  for(const [index,piece] of pieces.entries()){
     if(piece.kind==='arc'){curve(root,piece,cfg);continue}
     const {type,side}=piece.seg, d=piece.d0+middle, x=sideX[side]??0
     const g=new T.Group(); root.add(g); g.position.copy(piece.p0); g.rotation.y=piece.h0
     const floor=(a,b)=>{
       const ground=box(g,0,-.6,-(a+b)/2,9,1.2,b-a,cfg.stone)
-      if(cfg.forest)ground.material=forestPathMaterial
+      styleTrack(ground,cfg)
     }
     if(type==='gap'){
       floor(0,middle);floor(middle+3,length)
       box(g,0,.02,-middle+.18,9,.04,.36,0xffb54f)
       hazards.push({type,d})
     }else floor(0,length)
+    if(cfg.infernal && index%8===2){
+      const side=index%16===2?1:-1
+      infernalShrine(g,side*17,-middle,-side*.35,1.42)
+      infernalShrine(g,-side*24,-length,side*.22,1.6)
+    }
     for(let k=0;k<4;k++){
       const side=k%2?1:-1
       const z=-k*length/4
-      if(cfg.forest){
+      if(cfg.celestial){
+        const variation=(Math.floor(piece.d0/length)+k)%5
+        celestialPillar(g,side*(6.15+variation*.15),-5.4,z,2.15,8.1+variation*.6,variation*Math.PI*.32)
+        celestialCloud(g,side*(9.8+variation*.8),-7.7,z-1,9.5,3.6+variation*.44,9,k%2===0,true)
+        if(k<2)celestialCloud(g,side*(24+variation*2),-9,z-5,22,6,15,k%2!==0,true)
+      }else if(cfg.forest){
         const seed=piece.d0*4+k
         forestTree(g,side*(7.4+k*.19),z,seed)
         forestTree(g,side*(12+(k%3)*1.34),z-2.6,seed+5,true)
       }else if(!fingerPillar(g,side,z,piece.d0*4+k)){
         box(g,side*6,1,z,1.5,5+k,1.6,0x472c37).rotation.z=side*.16
       }
-      box(g,side*4.3,.07,z,.25,.14,4,cfg.forest?0x816148:0xc47b54)
+      box(g,side*4.3,.07,z,.25,.14,4,railColor(cfg))
     }
     if(type==='rocks'){
       const side=Math.sign(x), variant=Math.round(piece.d0)
-      if(cfg.hedgeObstacles){
+      if(cfg.celestial){
+        celestialCloud(g,x,-.06,-middle,4.1,1.82,2.17,side<0)
+      }else if(cfg.hedgeObstacles){
         if(!hedge(g,x,-middle,4,1.8,2.12,side<0))box(g,x,.9,-middle,4,1.8,2.12,0x39472e)
       }else{
         volcanicRock(g,x+side*.62,-.06,-middle,2.65,1.92,2.1,variant)
@@ -124,11 +143,11 @@ export function runner(root,cfg,route){
       hazards.push({type,d,x})
     }
     if(type==='fire'){
-      box(g,x,.05,-middle,4,.1,2,0xc08146)
-      hazards.push({type,d,x,mesh:box(g,x,1,-middle,4,2,2,0xff631d)})
+      box(g,x,.05,-middle,4,.1,2,cfg.celestial?0xb58c4a:0xc08146)
+      hazards.push({type,d,x,mesh:box(g,x,1,-middle,4,2,2,cfg.celestial?0xffbf58:0xff631d)})
     }
     if(type==='hurdle'){
-      box(g,0,.55,-middle,9,1.1,.6,cfg.forest?0x66513b:0x8c3b2e)
+      box(g,0,.55,-middle,9,1.1,.6,cfg.celestial?0xaf987a:cfg.forest?0x66513b:0x8c3b2e)
       for(let k=-4;k<=4;k++)box(g,k,1.25,-middle,.25,.3,.25,0xffb54f)
       hazards.push({type,d})
     }
@@ -138,7 +157,9 @@ export function runner(root,cfg,route){
         const width=b-a
         if(width<=.05)continue
         const center=(a+b)/2
-        if(cfg.hedgeObstacles){
+        if(cfg.celestial){
+          celestialCloud(g,center,-.04,-middle,width,2.44,1.38,a>ox)
+        }else if(cfg.hedgeObstacles){
           if(!hedge(g,center,-middle,width,2.44,1.38,a>ox))box(g,center,1.2,-middle,width,2.4,1.38,0x39472e)
         }else{
           const variant=Math.floor(piece.d0/length)+(a>ox?1:0)
@@ -148,8 +169,9 @@ export function runner(root,cfg,route){
       hazards.push({type,d,x:ox})
     }
     if(type==='pendulum'){
-      for(const s of [-1,1])box(g,s*5,3.3,-middle,.6,6.6,.6,0x5a4048)
-      box(g,0,6.6,-middle,10.6,.5,.6,0x5a4048)
+      const support=cfg.celestial?0xb4a38e:0x5a4048
+      for(const s of [-1,1])box(g,s*5,3.3,-middle,.6,6.6,.6,support)
+      box(g,0,6.6,-middle,10.6,.5,.6,support)
       const pivot=new T.Group();g.add(pivot);pivot.position.set(0,6.3,-middle)
       box(pivot,0,-2.8,0,.15,5.6,.15,0x2c2630)
       box(pivot,0,-5.6,0,1.2,1.2,.5,0xd8d0c0).rotation.z=Math.PI/4
@@ -176,10 +198,12 @@ export function runner(root,cfg,route){
       else row(safeX)
     }
   }
-  const gate=new T.Group();root.add(gate);gate.position.copy(endPos);gate.rotation.y=endHeading;arch(gate,0)
+  const gate=new T.Group();root.add(gate);gate.position.copy(endPos);gate.rotation.y=endHeading;arch(gate,0,cfg.celestial)
   const xs=[...pieces.map(p=>p.p0.x),endPos.x],zs=[...pieces.map(p=>p.p0.z),endPos.z]
   const [x0,x1,z0,z1]=[Math.min(...xs),Math.max(...xs),Math.min(...zs),Math.max(...zs)]
-  if(cfg.forest)forestWater(root,(x0+x1)/2,(z0+z1)/2,x1-x0+180,z1-z0+180)
+  if(cfg.celestial)celestialCloudDeck(root,(x0+x1)/2,(z0+z1)/2,x1-x0+240,z1-z0+240)
+  else if(cfg.forest)forestWater(root,(x0+x1)/2,(z0+z1)/2,x1-x0+180,z1-z0+180)
+  else if(cfg.infernal)infernalLava(root,(x0+x1)/2,(z0+z1)/2,x1-x0+180,z1-z0+180)
   else box(root,(x0+x1)/2,-5,(z0+z1)/2,x1-x0+120,.5,z1-z0+120,0xce481e)
   let index=0
   const find=d=>{
@@ -191,15 +215,28 @@ export function runner(root,cfg,route){
     at:(d,lat,out)=>{const p=find(d);return sample(p,d-p.d0,lat,out)},
     checkpoint:d=>find(d).d0}
 }
-function arch(g,z){
-  for(const x of [-3,3])box(g,x,3,z,1.2,6,1.7,0x856a69)
-  box(g,0,6,z,7.2,1.2,1.7,0xa68570)
+function arch(g,z,celestial=false){
+  for(const x of [-3,3]){
+    if(celestial)celestialPillar(g,x,0,z,1.5,5.75)
+    else box(g,x,3,z,1.2,6,1.7,0x856a69)
+  }
+  box(g,0,6,z,7.2,1.2,1.7,celestial?0xc7ad81:0xa68570)
 }
 export function arena(g,cfg){
   box(g,0,-.5,0,60,1,60,cfg.stone)
-  for(const s of [-1,1])for(const t of [-1,1])box(g,s*17,2,t*17,1,4,1,0x937668)
-  arch(g,-30); const door=box(g,0,2.5,-30,5,5,.8,0x834e43)
-  const entry=box(g,0,2,30,6,4,.65,0x675465)
+  if(cfg.infernal){
+    infernalLava(g,0,0,170,170)
+    infernalShrine(g,-33,-25,.49,2.45)
+    infernalShrine(g,34,-26,-.39,2.05)
+    infernalShrine(g,-35,21,1.17,1.7)
+  }
+  for(const s of [-1,1])for(const t of [-1,1]){
+    if(cfg.celestial)celestialPillar(g,s*17,0,t*17,1.65,5.8)
+    else box(g,s*17,2,t*17,1,4,1,0x937668)
+  }
+  arch(g,-30,cfg.celestial)
+  const door=box(g,0,2.5,-30,5,5,.8,cfg.celestial?0xc09a66:0x834e43)
+  const entry=box(g,0,2,30,6,4,.65,cfg.celestial?0xb5b0a1:0x675465)
   const stall=new T.Group(); stall.position.set(0,0,-14); g.add(stall); stall.visible=false
   box(stall,0,.55,0,3.2,1.1,1.6,0x59362b)
   box(stall,0,1.15,0,3.5,.16,1.8,0xd99b52)
@@ -210,12 +247,13 @@ export function arena(g,cfg){
   return {door,entry,stall}
 }
 export function heaven(g){
+  celestialCloudDeck(g,0,-47,240,250)
   for(let i=0;i<26;i++){
-    box(g,0,-.5,-i*4,6,1,4,0xfff4d6)
+    box(g,0,-.5,-i*4,6,1,4,0xfff4d6).material=celestialPathMaterial
     for(const s of [-1,1]){
-      if(i%3===0)box(g,s*3,1,-i*4,.5,3,.5,0xe5b95e)
-      box(g,s*(9+i%5),-2+i%3,-i*4,7,2,5,0xfffaf2)
+      if(i%3===0)celestialPillar(g,s*4.5,-2.6,-i*4,1.9,7.4,i*.6)
+      if(i%2===0)celestialCloud(g,s*(8+i%5),-7,-i*4,12,4.5,9,i%3===0,true)
     }
   }
-  arch(g,-99)
+  arch(g,-99,true)
 }

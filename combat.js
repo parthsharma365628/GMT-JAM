@@ -24,6 +24,7 @@ const PILLARS=[{x:-17,z:-17,r:.85},{x:-17,z:17,r:.85},{x:17,z:-17,r:.85},{x:17,z
 const projGeo=new T.SphereGeometry(.24,10,10)
 const projMat=new T.MeshBasicMaterial({color:0xff6b3d})
 const earthProjMat=new T.MeshBasicMaterial({color:0xa4f180})
+const heavenProjMat=new T.MeshBasicMaterial({color:0x8bdfff})
 const reflectedMat=new T.MeshBasicMaterial({color:0x6ef3ff})
 const waveGeo=new T.RingGeometry(1.15,1.65,24,1,Math.PI*.22,Math.PI*.56)
 waveGeo.rotateX(-Math.PI/2)
@@ -139,7 +140,7 @@ export class Combat{
     this.shake=Math.max(this.shake,.25)
   }
   spawnProjectile(x,y,z,dir,speed,damage,school){
-    const mesh=new T.Mesh(projGeo,school==='earth'?earthProjMat:projMat)
+    const mesh=new T.Mesh(projGeo,school==='heaven'?heavenProjMat:school==='earth'?earthProjMat:projMat)
     mesh.position.set(x,y,z)
     this.root.add(mesh)
     this.projectiles.push({mesh,vx:dir.x*speed,vz:dir.z*speed,damage,life:3.2,reflected:false})
