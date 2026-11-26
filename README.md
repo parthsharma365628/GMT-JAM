@@ -94,6 +94,7 @@ Write the cutscene dialogue in `dialogue.js`.
 - `W`, `A`, `S`, `D`: move
 - `J` or left mouse button: attack
 - `K`, `Shift`, or right mouse button: dodge
+- `R` or `F`: drink a potion (heals 2 hearts; extra becomes yellow overheal, up to 2)
 - `E`: collect the sword
 - `Esc`: pause
 

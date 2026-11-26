@@ -109,3 +109,25 @@ body{--px:6px;--bar-length:min(560px,60vw)}
 .hit-pop b{font:700 calc(15px*var(--s))/1 Georgia,serif;color:#ffe2b0;-webkit-text-stroke:calc(3px*var(--s)) #1a0608;paint-order:stroke fill}
 .hit-pop.heavy b{color:#ff5a3c}
 @keyframes hit-rise{0%{opacity:0;translate:0 6px;scale:.6}15%{opacity:1;translate:0 0;scale:1.15}30%{scale:1}75%{opacity:1}100%{opacity:0;translate:0 -30px}}
+/* ── Fight HUD: angel hearts (sprites/hearts.png), wave counter, dodge/special bars under the player ── */
+#hearts{position:fixed;left:2.5vw;top:calc(3vh + 104px);display:flex;gap:2px;pointer-events:none}
+.heart{width:40px;height:40px;background:url(./public/sprites/hearts.png) no-repeat;background-size:80px 80px;image-rendering:pixelated}
+.heart.full{background-position:0 0}.heart.over{background-position:-40px 0}.heart.broken{background-position:0 -40px}
+.heart.pop{animation:heart-pop .35s ease-out}.heart.crack{animation:heart-crack .45s ease-out}
+@keyframes heart-pop{0%{transform:scale(.3)}60%{transform:scale(1.25)}100%{transform:scale(1)}}
+@keyframes heart-crack{0%,40%{transform:translateX(-4px)}20%,60%{transform:translateX(4px)}100%{transform:none}}
+body.fighting aside#hud{top:calc(3vh + 152px)}
+#wave{position:fixed;left:50%;top:0;transform:translateX(-50%);display:flex;align-items:center;gap:12px;background:#231922e8;padding:10px 20px;border-bottom:3px solid #e6a264;border-radius:0 0 6px 6px;white-space:nowrap;pointer-events:none}
+#wave b{font:700 22px/1 Georgia,serif;color:#ffe2b0}
+#wave-pips{display:flex;gap:5px}#wave-pips i{width:22px;height:6px;border-radius:3px;background:#110b10;border:1px solid #ffffff22}
+#wave-pips i.done{background:#ffbe55;border-color:#ffbe55}#wave-pips i.now{background:#e6a264aa;border-color:#ffbe55}
+#pbars{position:fixed;transform:translateX(-50%);display:grid;gap:3px;--px:2px;opacity:.6;pointer-events:none}
+.pbar{position:relative;width:70px;height:calc(5*var(--px));image-rendering:pixelated}
+.pbar .mid{position:absolute;left:calc(2*var(--px));right:calc(2*var(--px));top:0;bottom:0;border-top:var(--px) solid #000;border-bottom:var(--px) solid #000}
+.pbar .cap{position:absolute;top:0;width:calc(2*var(--px));height:100%;background:url(./public/sprites/finish_line.png) no-repeat;background-size:calc(32*var(--px)) calc(32*var(--px))}
+.pbar .cap.l{left:0;background-position:calc(-5*var(--px)) calc(-15*var(--px))}
+.pbar .cap.r{right:0;background-position:calc(-28*var(--px)) calc(-15*var(--px))}
+.pbar .track{position:absolute;left:calc(2*var(--px));right:calc(2*var(--px));top:var(--px);height:calc(3*var(--px));background:#ffffffb0}
+.pbar .track i{display:block;height:100%;width:100%}
+.dodge .track i{background:linear-gradient(90deg,#0a6f88,#22c8ea 60%,#9ff4ff)}
+.special .track i{background:linear-gradient(90deg,#3d1478,#8a3cf0 60%,#d6b4ff)}

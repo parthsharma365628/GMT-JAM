@@ -62,6 +62,7 @@ function resolveArena(pos,radius){
   pos.z=T.MathUtils.clamp(pos.z,-ARENA_LIMIT-.1,ARENA_LIMIT)
 }
 
+export const MAX_HEARTS=3, MAX_OVERHEAL=2, POTION_HEARTS=2
 const hitBox=new T.Box3(),hitCenter=new T.Vector3()
 export class Combat{
   // Record a hit for the damage popup: world position above the target's head, damage, and whether it was a heavy hit.
@@ -69,9 +70,9 @@ export class Combat{
     hitBox.setFromObject(target).getCenter(hitCenter)
     this.hits.push({x:hitCenter.x,y:hitBox.max.y,z:hitCenter.z,dmg:Math.round(dmg),heavy})
   }
-  constructor(root,player,boss,cfg,maxHp=100,weapon=null){
+  constructor(root,player,boss,cfg,maxHp=MAX_HEARTS,weapon=null){
     Object.assign(this,{
-      root,player,boss,cfg,hp:maxHp,maxHp,bossHp:cfg.hp,phase:'chase',time:0,cycle:0,
+      root,player,boss,cfg,hp:maxHp,maxHp,overheal:0,bossHp:cfg.hp,phase:'chase',time:0,cycle:0,
       cooldown:0,dash:0,attack:0,immune:0,flash:0,hitstop:0,shake:0,
       switchLockout:0,potionCooldown:0,specialCooldown:0,specialMaxCd:DEFAULT_SPECIAL.cd,
       comboStep:0,comboTimer:0,comboBuffered:false,projFired:false
@@ -128,13 +129,18 @@ export class Combat{
     if(triggerLockout)this.switchLockout=.45
     equipWeaponMesh(this.player,weapon)
   }
-  heal(amount){
-    this.hp=Math.min(this.maxHp,this.hp+amount)
+  // Health is hearts: hp = white hearts (0..maxHp), overheal = yellow hearts (0..MAX_OVERHEAL).
+  get canHeal(){return this.hp<this.maxHp || this.overheal<MAX_OVERHEAL}
+  heal(hearts=POTION_HEARTS){
+    const repaired=Math.min(hearts,this.maxHp-this.hp)   // broken hearts are repaired first
+    this.hp+=repaired
+    this.overheal=Math.min(MAX_OVERHEAL,this.overheal+hearts-repaired) // the rest becomes overheal
     this.potionCooldown=1.5
   }
-  damagePlayer(amount){
+  damagePlayer(){ // every hit costs one heart, whatever its damage: overheal first, then a white heart breaks
     if(this.immune>0)return
-    this.hp=Math.max(0,this.hp-amount)
+    if(this.overheal>0)this.overheal--
+    else this.hp=Math.max(0,this.hp-1)
     this.immune=.75
     this.shake=Math.max(this.shake,.25)
   }
