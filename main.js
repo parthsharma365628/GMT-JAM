@@ -334,9 +334,15 @@ function renderSections(fromState){
     const li=document.createElement('li')
     li.className=sec.key===current?'current':cleared.has(sec.key)?'cleared':'locked'
     li.innerHTML=`<span class="num">${i+1}</span><span class="kind">${sec.kind}</span><span class="name">${cleared.has(sec.key)||sec.key===current?sec.name:'Locked'}</span>`
+    if(li.className==='cleared'){li.tabIndex=0;li.title='Revisit this section';li.onclick=li.onkeydown=e=>{if(e.type==='keydown'&&e.key!=='Enter')return;revisit(sec)}}
     return li
   }))
   $('#sections').hidden=false
+}
+// Jump to a finished section from the pause menu. Score, weapons and potions carry over, as between stages.
+function revisit(sec){
+  play();load(sec.stage)
+  if(sec.kind==='Combat')encounter()
 }
 function pause(){
   if(state==='shop')closeShop()

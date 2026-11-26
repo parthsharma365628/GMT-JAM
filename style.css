@@ -141,3 +141,6 @@ body.fighting aside#hud{top:calc(3vh + 152px)}
 #sections li.locked{color:#6e6168}#sections li.locked .name{font-style:italic;font-weight:400}
 #sections li.cleared{color:#fff7e6}
 #sections li.current{color:#ffc888;border-left-color:#ffc888;background:#ffc88814}
+#sections li.cleared{cursor:pointer;transition:background .15s,border-color .15s}
+#sections li.cleared:hover,#sections li.cleared:focus-visible{background:#ffffff14;border-left-color:#fff7e6;outline:none}
+#sections li.cleared:hover .name::after,#sections li.cleared:focus-visible .name::after{content:'  ›  Revisit';font:600 11px system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:#ffc888}
