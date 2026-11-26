@@ -1,2 +1,66 @@
-*{box-sizing:border-box}body{margin:0;overflow:hidden;background:#25151f;color:#fff5de;font:16px 'Work Sans',system-ui,sans-serif}canvas{position:fixed;inset:0;z-index:-1}main{position:absolute;inset:0;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:8vw;background:linear-gradient(90deg,#1d1018f7,#241720aa 48%,transparent)}[hidden]{display:none!important}small{color:#ffc888;font-weight:700;letter-spacing:.24em;font-size:12px}h1{font:clamp(50px,8vw,116px)/.93 Georgia,serif;letter-spacing:-.065em;margin:.23em 0}i{color:#ffd396;font-weight:400}p{line-height:1.7;max-width:490px;white-space:pre-line}button{font:inherit;font-weight:650;background:#ffd49b;color:#291824;border:0;padding:12px 22px;margin:6px 8px 0 0;cursor:pointer}button:hover,button:focus-visible{background:white}aside,#hint{position:fixed;background:#231922e8;padding:14px 20px;border-left:3px solid #e6a264}aside{left:3vw;top:4vh;min-width:230px}strong{display:block;margin:4px 0}#hint{bottom:5vh;left:50%;transform:translateX(-50%);text-align:center}#hint:empty{display:none}progress{accent-color:#f09359;width:100%}label{display:block;font-size:13px}
-#score{position:fixed;min-width:180px;top:3vh;left:50%;transform:translateX(-50%);text-align:center;background:#231922e8;padding:10px 26px;border-bottom:3px solid #e6a264}#score b{display:block;font:700 30px/1.1 Georgia,serif;font-variant-numeric:tabular-nums lining-nums;color:#ffe2b0}#score span{font-size:13px;color:#ffc888}#points.pop{animation:pop .25s ease-out}@keyframes pop{40%{transform:scale(1.25);color:#fff}}
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;background:#25151f;color:#fff5de;font:16px 'Work Sans',system-ui,sans-serif}
+canvas{position:fixed;inset:0;z-index:-1}
+main{position:absolute;inset:0;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;padding:8vw;background:linear-gradient(90deg,#1d1018f7,#241720aa 48%,transparent)}
+[hidden]{display:none!important}
+small{color:#ffc888;font-weight:700;letter-spacing:.24em;font-size:12px}
+h1{font:clamp(50px,8vw,116px)/.93 Georgia,serif;letter-spacing:-.065em;margin:.23em 0}
+i{color:#ffd396;font-weight:400}
+p{line-height:1.7;max-width:490px;white-space:pre-line}
+button{font:inherit;font-weight:650;background:#ffd49b;color:#291824;border:0;padding:12px 22px;margin:6px 8px 0 0;cursor:pointer}
+button:hover,button:focus-visible{background:white}
+
+/* Top-Left Stage & Combat HUD */
+aside#hud{
+  position:fixed;left:2.5vw;top:3vh;width:290px;
+  background:linear-gradient(155deg,#241822f2,#160e15eb);
+  border:1px solid #5c424d;border-left:4px solid #f0a868;
+  border-radius:6px;padding:14px 16px;
+  box-shadow:0 12px 32px #00000075;backdrop-filter:blur(6px)
+}
+aside#hud #label{
+  display:block;font-size:11px;font-weight:700;letter-spacing:.18em;
+  text-transform:uppercase;color:#ffc888
+}
+aside#hud #objective{
+  display:block;font:700 17px/1.25 Georgia,serif;color:#fff7e6;
+  margin:3px 0 0
+}
+aside#hud #meters{margin-top:12px;padding-top:10px;border-top:1px solid #ffffff1a;display:grid;gap:9px}
+aside#hud #meters:empty{display:none}
+
+.meter-head{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:4px}
+.meter-head span{font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:#e5d3c3}
+.meter-head b{font-variant-numeric:tabular-nums;font-weight:700;color:#fff5de;font-size:12px}
+.meter-track{height:8px;background:#110b10;border-radius:999px;overflow:hidden;border:1px solid #ffffff14}
+.meter-fill{height:100%;border-radius:999px;transition:width .09s ease-out}
+.meter-vitality .meter-fill{background:linear-gradient(90deg,#c93b4b,#ff6b6b);box-shadow:0 0 8px #ff5c6c66}
+.meter-boss .meter-fill{background:linear-gradient(90deg,#d97228,#ffbe55);box-shadow:0 0 8px #ff9f4066}
+.meter-dodge .meter-fill{background:linear-gradient(90deg,#2b9eb3,#6ef3ff);box-shadow:0 0 8px #5ce1e666}
+
+#hint{position:fixed;bottom:5vh;left:50%;transform:translateX(-50%);text-align:center;background:#231922e8;padding:12px 20px;border-left:3px solid #e6a264;border-radius:4px}
+#hint:empty{display:none}
+#score{position:fixed;min-width:180px;top:3vh;left:50%;transform:translateX(-50%);text-align:center;background:#231922e8;padding:10px 26px;border-bottom:3px solid #e6a264;border-radius:0 0 6px 6px}
+#score b{display:block;font:700 30px/1.1 Georgia,serif;font-variant-numeric:tabular-nums lining-nums;color:#ffe2b0}
+#score span{font-size:13px;color:#ffc888}
+#points.pop{animation:pop .25s ease-out}
+@keyframes pop{40%{transform:scale(1.25);color:#fff}}
+
+#arsenal{position:fixed;left:2.5vw;bottom:3vh;display:flex;flex-direction:column;gap:8px;background:#231922e8;padding:12px 16px;border:1px solid #5c424d;border-left:4px solid #e6a264;border-radius:6px;min-width:260px}
+#slots{display:flex;gap:6px;flex-wrap:wrap}
+.slot{font-size:12px;padding:6px 10px;background:#171017;border:1px solid #59434f;border-radius:4px;color:#cbbba8}
+.slot.unlocked{color:#fff5de;border-color:#9e7856}
+.slot.active{background:#ffd49b;color:#291824;font-weight:700;border-color:#fff}
+.slot.locked{opacity:.55;font-style:italic}
+#lockout{font-size:12px;color:#ff9e6d;min-height:16px}
+#potion-bar{font-size:13px;color:#8ff5c6;display:flex;justify-content:space-between;align-items:center}
+#shop{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:#140c12d9;z-index:20}
+.shop-card{background:#231922;border:2px solid #e6a264;border-radius:8px;padding:28px 32px;max-width:560px;width:90vw;box-shadow:0 20px 60px #000a}
+.shop-card h2{font:700 32px/1.1 Georgia,serif;margin:0 0 6px;color:#ffe2b0}
+.shop-sub{font-size:14px;color:#ffc888;margin-bottom:18px}
+.shop-grid{display:grid;gap:10px;margin-bottom:18px}
+.shop-item{display:flex;justify-content:space-between;align-items:center;gap:14px;background:#181118;padding:12px 14px;border:1px solid #4c3844;border-radius:5px}
+.shop-item b{display:block;color:#fff5de;font-size:15px}
+.shop-item small{letter-spacing:0;font-size:12px;color:#cbbba8;font-weight:400}
+.shop-item button{margin:0;white-space:nowrap;padding:9px 14px;font-size:13px}
+.shop-item button:disabled{opacity:.45;cursor:not-allowed;background:#6b5c63;color:#cbbba8}
