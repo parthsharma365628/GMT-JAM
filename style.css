@@ -131,3 +131,13 @@ body.fighting aside#hud{top:calc(3vh + 152px)}
 .pbar .track i{display:block;height:100%;width:100%}
 .dodge .track i{background:linear-gradient(90deg,#0a6f88,#22c8ea 60%,#9ff4ff)}
 .special .track i{background:linear-gradient(90deg,#3d1478,#8a3cf0 60%,#d6b4ff)}
+/* ── Pause menu: small "Paused" in the top-right corner and the numbered section list ── */
+#menu.paused h1{order:-1;margin:0 0 10px;font-size:clamp(26px,3vw,38px);letter-spacing:-.02em}
+#sections{list-style:none;margin:6px 0 18px;padding:0;display:grid;gap:4px;min-width:min(420px,80vw)}
+#sections li{display:grid;grid-template-columns:28px 76px 1fr;align-items:baseline;gap:8px;padding:7px 12px;border-left:3px solid transparent;background:#1d10188c;font-size:14px}
+#sections .num{font:700 15px Georgia,serif}
+#sections .kind{font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+#sections .name{font:700 15px Georgia,serif}
+#sections li.locked{color:#6e6168}#sections li.locked .name{font-style:italic;font-weight:400}
+#sections li.cleared{color:#fff7e6}
+#sections li.current{color:#ffc888;border-left-color:#ffc888;background:#ffc88814}
