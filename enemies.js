@@ -1,10 +1,18 @@
 import * as T from 'three'
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js'
 import {box,sword} from './world.js'
+import {animateWarden} from './warden-models.js'
+import {replaceWeaponModel} from './weapon-models.js'
 
 const loader=new GLTFLoader()
 const modelCache=new Map()
 const forward=new T.Vector3(), diff=new T.Vector3()
+const spellOrigin=new T.Vector3(), spellDirection=new T.Vector3()
+const spellGlowGeometry=new T.IcosahedronGeometry(.14,1)
+const spellGlowMaterials={
+  hell:new T.MeshBasicMaterial({color:0xff713d}),
+  earth:new T.MeshBasicMaterial({color:0xb0fb91})
+}
 
 function face(model,dir){model.rotation.y=Math.atan2(-dir.x,-dir.z)}
 function facing(model){return forward.set(-Math.sin(model.rotation.y),0,-Math.cos(model.rotation.y))}
@@ -103,7 +111,7 @@ export const ENEMY_TYPES={
 }
 
 export class Enemy{
-  constructor(root,typeKey,pos){
+  constructor(root,typeKey,pos,wardenModel=null,variant=0){
     const spec=ENEMY_TYPES[typeKey]??ENEMY_TYPES.rusher
     this.spec=spec
     this.type=typeKey
@@ -119,7 +127,21 @@ export class Enemy{
     this.mesh=new T.Group()
     this.mesh.position.set(pos.x,0,pos.z)
     root.add(this.mesh)
-    attachModel(this.mesh,spec.modelUrl,spec.height,spec.build)
+    if(wardenModel){
+      const weapon=spec.build(this.mesh).userData.weapon
+      if(typeKey==='shooter')replaceWeaponModel(weapon,wardenModel==='hell'?'hellStaff':'earthStaff')
+      else replaceWeaponModel(weapon,wardenModel==='hell'?'warden':'earthSword',.85)
+      this.mesh.userData.weapon=weapon
+      this.animate=animateWarden(wardenModel,this.mesh,spec.height,typeKey,variant)
+      this.castTip=weapon.getObjectByName('spell-origin')
+      if(this.castTip){
+        this.magicSchool=wardenModel
+        this.castGlow=new T.Mesh(spellGlowGeometry,spellGlowMaterials[wardenModel])
+        this.castGlow.visible=false
+        this.castTip.add(this.castGlow)
+      }
+    }else attachModel(this.mesh,spec.modelUrl,spec.height,spec.build)
+    this.weaponScale=this.animate?this.weapon.scale.x:1
 
     if(spec.hitRadius){
       const geo=new T.CircleGeometry(spec.hitRadius,32,Math.PI/2-spec.arc/2,spec.arc)
@@ -131,14 +153,16 @@ export class Enemy{
   }
   get position(){return this.mesh.position}
   get alive(){return this.hp>0}
+  get weapon(){return this.mesh.userData.weapon??this.mesh.children[0]?.userData?.weapon}
   takeDamage(dmg,dir,kb){
     if(!this.alive)return
     this.hp=Math.max(0,this.hp-dmg)
     this.flash=.18
     this.vel.copy(dir).multiplyScalar(kb*this.spec.kbResist)
     if(this.marker)this.marker.visible=false
-    const w=this.mesh.children[0]?.userData?.weapon
-    if(w){w.rotation.x=0;w.scale.setScalar(1)}
+    const w=this.weapon
+    if(w){w.rotation.x=0;w.scale.setScalar(this.weaponScale)}
+    if(this.castGlow)this.castGlow.visible=false
     if(this.hp===0){
       this.deathTime=.4
       this.vel.multiplyScalar(.45)
@@ -171,12 +195,20 @@ export class Enemy{
 
     diff.subVectors(player.position,pos)
     const distance=diff.length()
-    const w=this.mesh.children[0]?.userData?.weapon
+    const w=this.weapon
+    const {x,z}=pos
 
     if(this.type==='shooter'){
       this.updateShooter(dt,player,combat,diff,distance,w)
     }else{
       this.updateMelee(dt,player,combat,diff,distance,w)
+    }
+    if(this.animate&&!this.castTip){
+      if(this.phase==='wind')this.animate(dt,'attack_1',.24*(1-this.time/this.spec.wind),true)
+      else if(this.phase==='impact')this.animate(dt,'attack_1',.24+.76*(1-this.time/.18),true)
+      else if(this.type==='shooter' && this.phase==='recover' && this.time>this.spec.recovery-.24){
+        this.animate(dt,'special_thrust',.24+.76*(this.spec.recovery-this.time)/.24,true)
+      }else this.animate(dt,pos.x!==x||pos.z!==z?'walk':'idle',0,true)
     }
   }
   updateMelee(dt,player,combat,diff,distance,w){
@@ -197,14 +229,14 @@ export class Enemy{
     }
     this.time-=dt
     if(this.phase==='wind'){
-      if(w)w.rotation.x=.8
+      if(w&&!this.animate)w.rotation.x=.8
       if(this.marker){
         this.marker.position.set(pos.x,.025,pos.z)
         this.marker.material.opacity=.28+.18*Math.sin(this.time*18)
       }
       if(this.time<=0){
         this.phase='impact';this.time=.18
-        if(w)w.rotation.x=-1.4
+        if(w&&!this.animate)w.rotation.x=-1.4
         if(!combat.immune && distance<s.hitRadius && diff.normalize().dot(facing(this.mesh))>Math.cos(s.arc/2)){
           combat.damagePlayer(s.damage)
         }
@@ -222,6 +254,7 @@ export class Enemy{
   }
   updateShooter(dt,player,combat,diff,distance,w){
     const s=this.spec,pos=this.mesh.position
+    const {x,z}=pos
     face(this.mesh,diff)
     if(this.phase==='chase'){
       if(distance>s.preferredMax){
@@ -231,22 +264,40 @@ export class Enemy{
       }else{
         this.phase='wind';this.time=s.wind
       }
+      if(this.castTip)this.animate?.(dt,pos.x!==x||pos.z!==z?'walk':'idle',0,true)
       return
     }
     this.time-=dt
     if(this.phase==='wind'){
-      if(w)w.scale.setScalar(1+.35*Math.sin((1-this.time/s.wind)*Math.PI))
+      const charge=T.MathUtils.clamp(1-this.time/s.wind,0,1)
+      if(this.castTip){
+        this.animate?.(dt,'cast',.57*charge,true)
+        this.castGlow.visible=true
+        this.castGlow.scale.setScalar(.25+charge*.85)
+      }else if(w)w.scale.setScalar(this.weaponScale*(1+.35*Math.sin(charge*Math.PI)))
       if(this.time<=0){
-        if(w)w.scale.setScalar(1)
-        const shotDir=diff.clone().normalize()
-        combat.spawnProjectile(pos.x+shotDir.x*.8,1.1,pos.z+shotDir.z*.8,shotDir,s.projSpeed,s.damage)
+        if(this.castTip){
+          this.castGlow.visible=false
+          this.mesh.parent.worldToLocal(this.castTip.getWorldPosition(spellOrigin))
+          spellDirection.subVectors(player.position,spellOrigin).setY(0).normalize()
+          combat.spawnProjectile(spellOrigin.x,spellOrigin.y,spellOrigin.z,spellDirection,s.projSpeed,s.damage,this.magicSchool)
+        }else{
+          if(w)w.scale.setScalar(this.weaponScale)
+          const shotDir=diff.clone().normalize()
+          combat.spawnProjectile(pos.x+shotDir.x*.8,1.1,pos.z+shotDir.z*.8,shotDir,s.projSpeed,s.damage)
+        }
         this.phase='recover';this.time=s.recovery
       }
-    }else if(this.time<=0){
-      this.phase='chase'
+    }else{
+      if(this.castTip){
+        const follow=T.MathUtils.clamp((s.recovery-this.time)/.46,0,1)
+        this.animate?.(dt,follow<1?'cast':'idle',.57+.43*follow,true)
+      }
+      if(this.time<=0)this.phase='chase'
     }
   }
   dispose(){
+    if(this.animate)this.mesh.traverse(node=>{if(node.isSkinnedMesh)node.skeleton.dispose()})
     this.mesh.removeFromParent()
     if(this.marker){
       this.marker.removeFromParent()

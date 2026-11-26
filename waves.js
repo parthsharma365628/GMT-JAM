@@ -25,6 +25,7 @@ export class WaveSpawner{
   constructor(root,cfg,player,boss){
     this.root=root
     this.waves=cfg.waves??DEFAULT_WAVES
+    this.wardenModels=cfg.wardenModels
     this.player=player
     this.boss=boss
     this.index=-1
@@ -52,7 +53,7 @@ export class WaveSpawner{
       this.boss.visible=this.boss.userData.weapon.visible=true
       this.bossActive=true
     }
-    for(const type of wave.enemies??[]){
+    for(const [variant,type] of (wave.enemies??[]).entries()){
       const pt=pickSpawnPoint(this.player.position,taken)
       taken.push(pt)
       const geo=new T.RingGeometry(.35,.75,24)
@@ -60,7 +61,7 @@ export class WaveSpawner{
       const ring=new T.Mesh(geo,new T.MeshBasicMaterial({color:0xff9a40,transparent:true,opacity:.8,side:T.DoubleSide}))
       ring.position.set(pt.x,.03,pt.z)
       this.root.add(ring)
-      this.spawning.push({type,pos:pt,timer:.65,ring})
+      this.spawning.push({type,variant,pos:pt,timer:.65,ring})
     }
   }
   update(dt,enemies,bossAlive){
@@ -72,7 +73,7 @@ export class WaveSpawner{
       s.ring.material.opacity=Math.max(0,s.timer/.65)
       if(s.timer<=0){
         s.ring.removeFromParent();s.ring.geometry.dispose();s.ring.material.dispose()
-        enemies.push(new Enemy(this.root,s.type,s.pos))
+        enemies.push(new Enemy(this.root,s.type,s.pos,this.wardenModels,s.variant))
         this.spawning.splice(i,1)
       }
     }

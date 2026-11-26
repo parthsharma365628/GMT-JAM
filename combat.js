@@ -23,11 +23,20 @@ const MOVE_SPEED=5.5, DASH_SPEED=13.5, DASH_TIME=.28, COMBO_WINDOW=.65, SWITCH_L
 const PILLARS=[{x:-17,z:-17,r:.85},{x:-17,z:17,r:.85},{x:17,z:-17,r:.85},{x:17,z:17,r:.85}]
 const projGeo=new T.SphereGeometry(.24,10,10)
 const projMat=new T.MeshBasicMaterial({color:0xff6b3d})
+const earthProjMat=new T.MeshBasicMaterial({color:0xa4f180})
 const reflectedMat=new T.MeshBasicMaterial({color:0x6ef3ff})
 const waveGeo=new T.RingGeometry(1.15,1.65,24,1,Math.PI*.22,Math.PI*.56)
 waveGeo.rotateX(-Math.PI/2)
 
 const forward=new T.Vector3(), delta=new T.Vector3(), sep=new T.Vector3()
+
+export function equipWeaponMesh(actor,weapon){
+  const mount=actor.userData.weapon
+  if(!mount)return
+  mount.clear()
+  if(weapon?.createMesh)weapon.createMesh(mount)
+  else sword(mount,0,0,0)
+}
 
 function targetAngle(dir){return Math.atan2(-dir.x,-dir.z)}
 function face(model,dir){model.rotation.y=targetAngle(dir)}
@@ -69,6 +78,7 @@ export class Combat{
     this.dashDir=this.dir.clone()
     this.vel=new T.Vector3()
     this.bossVel=new T.Vector3()
+    this.bossFallTime=0
     this.anim={state:'idle',action:'idle',trigger:null,speed:0,progress:0}
     this.enemies=[]
     this.projectiles=[]
@@ -85,6 +95,15 @@ export class Combat{
     if(weapon)this.setWeapon(weapon,false)
   }
   get cleared(){return this.waves.cleared}
+  updateBossFall(dt){
+    if(!this.waves.bossActive||this.bossHp>0||this.bossFallTime>=1)return
+    const boss=this.boss
+    if(this.bossFallTime===0)this.bossFallStart=boss.rotation.z
+    this.bossFallTime=Math.min(1,this.bossFallTime+dt)
+    const fall=T.MathUtils.smoothstep(this.bossFallTime,0,1)
+    boss.rotation.z=T.MathUtils.lerp(this.bossFallStart,1.5,fall)
+    boss.userData.animate?.(dt,'defeat',.5*fall,true)
+  }
   get canSwitch(){return this.attack<=0 && this.dash<=0 && this.switchLockout<=0}
   get specialReady(){return this.specialCooldown<=0}
   setWeapon(weapon,triggerLockout=false){
@@ -95,14 +114,12 @@ export class Combat{
     this.specialMaxCd=this.special.cd??2.0
     this.comboStep=0
     this.comboTimer=0
+    this.comboBuffered=false
+    this.attack=this.dash=0
+    Object.assign(this.anim,{state:'idle',action:'idle',trigger:null,speed:0,progress:0})
     this.activeMove=this.combo[0]
     if(triggerLockout)this.switchLockout=.45
-    const mount=this.player.userData.weapon
-    if(mount){
-      mount.clear()
-      if(weapon?.createMesh)weapon.createMesh(mount)
-      else sword(mount,0,0,0)
-    }
+    equipWeaponMesh(this.player,weapon)
   }
   heal(amount){
     this.hp=Math.min(this.maxHp,this.hp+amount)
@@ -114,8 +131,8 @@ export class Combat{
     this.immune=.75
     this.shake=Math.max(this.shake,.25)
   }
-  spawnProjectile(x,y,z,dir,speed,damage){
-    const mesh=new T.Mesh(projGeo,projMat)
+  spawnProjectile(x,y,z,dir,speed,damage,school){
+    const mesh=new T.Mesh(projGeo,school==='earth'?earthProjMat:projMat)
     mesh.position.set(x,y,z)
     this.root.add(mesh)
     this.projectiles.push({mesh,vx:dir.x*speed,vz:dir.z*speed,damage,life:3.2,reflected:false})
@@ -160,11 +177,12 @@ export class Combat{
     }
     this.anim.trigger=move.anim
     this.anim.action=move.anim
+    this.anim.state='attack'
+    this.anim.progress=0
     const autoAimRange=move===this.special?5.2:move===this.dashStrike?4.2:3.5
     const target=this.findNearestTarget(autoAimRange)
     if(target){
       this.dir.subVectors(target,p.position).setY(0).normalize()
-      face(p,this.dir)
     }
     this.vel.copy(this.dir).multiplyScalar(move.step)
   }
@@ -214,6 +232,7 @@ export class Combat{
       this.anim.speed=1
       this.anim.progress=1-this.dash/DASH_TIME
     }else if(this.attack>0){
+      turnToward(p,this.dir,24,dt)
       if(active && wantsAttack && this.activeMove!==this.dashStrike && this.activeMove!==this.special){
         this.comboBuffered=true
       }
@@ -459,9 +478,11 @@ export class Combat{
     resolveArena(b.position,.85)
 
     this.flash=Math.max(0,this.flash-dt);b.rotation.z=this.flash*.9
+    const animateBoss=b.userData.animate
     const diff=delta.subVectors(p.position,b.position),distance=diff.length()
     if(this.phase==='chase'){
       face(b,diff)
+      animateBoss?.(dt,distance>2.9?'warden_walk':'idle',0,true)
       if(distance>2.9)b.position.addScaledVector(diff.normalize(),dt*this.cfg.chaseSpeed)
       else{
         this.key=this.cfg.attacks[this.cycle++%this.cfg.attacks.length]
@@ -475,9 +496,11 @@ export class Combat{
     const a=attacks[this.key],m=this.markers[this.key]
     if(this.phase==='wind'){
       m.position.copy(b.position);m.position.y=.025
-      b.userData.weapon.rotation.x=.85;m.material.opacity=.32+.18*Math.sin(this.time*17)
+      if(!animateBoss)b.userData.weapon.rotation.x=.85
+      m.material.opacity=.32+.18*Math.sin(this.time*17)
       if(this.time<=0){
-        this.phase='impact';this.time=.24;b.userData.weapon.rotation.x=-1.5
+        this.phase='impact';this.time=.24
+        if(!animateBoss)b.userData.weapon.rotation.x=-1.5
         if(!this.immune && distance<a.radius && (a.arc>=6 || diff.normalize().dot(facing(b))>Math.cos(a.arc/2))){
           this.damagePlayer(this.cfg.damage)
         }
@@ -486,6 +509,13 @@ export class Combat{
       m.scale.setScalar(1+(.24-this.time)*.6)
       if(this.time<=0){m.visible=false;this.phase='recover';this.time=a.recovery}
     }else if(this.time<=0){this.phase='chase';b.userData.weapon.rotation.x=0}
+    if(animateBoss){
+      const motion=this.key==='slam'?'warden_slam':'warden_swing'
+      if(this.phase==='wind')animateBoss(dt,motion,.48*(1-this.time/a.wind),true)
+      else if(this.phase==='impact')animateBoss(dt,motion,.48+.28*(1-this.time/.24),true)
+      else if(this.phase==='recover')animateBoss(dt,motion,.76+.24*(1-this.time/a.recovery),true)
+      else animateBoss(dt,'idle',0,true)
+    }
   }
   dispose(){
     this.waves.dispose()

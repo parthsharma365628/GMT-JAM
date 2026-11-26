@@ -1,6 +1,8 @@
 import * as T from 'three'
 import {volcanicRock} from './rocks.js'
 import {fingerPillar} from './pillars.js'
+import {hedge} from './hedges.js'
+import {forestPathMaterial,forestTree,forestWater} from './forest.js'
 const cube = new T.BoxGeometry()
 const materials = new Map()
 export function box(parent,x,y,z,w,h,d,color) {
@@ -76,8 +78,10 @@ function curve(root,p,cfg){
   const arcDepth=lat=>(TURN_RADIUS+sg*lat)*Math.abs(p.turn)/n*1.15+.1
   for(let k=0;k<n;k++){
     const h=sample(p,(k+.5)*step,0,v)
-    box(root,v.x,-.6,v.z,9,1.2,arcDepth(-sg*4.5),cfg.stone).rotation.y=h
-    for(const s of [-1,1]){sample(p,(k+.5)*step,s*4.3,v);box(root,v.x,.07,v.z,.25,.14,arcDepth(s*4.3),0xc47b54).rotation.y=h}
+    const ground=box(root,v.x,-.6,v.z,9,1.2,arcDepth(-sg*4.5),cfg.stone)
+    ground.rotation.y=h
+    if(cfg.forest)ground.material=forestPathMaterial
+    for(const s of [-1,1]){sample(p,(k+.5)*step,s*4.3,v);box(root,v.x,.07,v.z,.25,.14,arcDepth(s*4.3),cfg.forest?0x816148:0xc47b54).rotation.y=h}
   }
 }
 export function runner(root,cfg,route){
@@ -87,7 +91,10 @@ export function runner(root,cfg,route){
     if(piece.kind==='arc'){curve(root,piece,cfg);continue}
     const {type,side}=piece.seg, d=piece.d0+middle, x=sideX[side]??0
     const g=new T.Group(); root.add(g); g.position.copy(piece.p0); g.rotation.y=piece.h0
-    const floor=(a,b)=>box(g,0,-.6,-(a+b)/2,9,1.2,b-a,cfg.stone)
+    const floor=(a,b)=>{
+      const ground=box(g,0,-.6,-(a+b)/2,9,1.2,b-a,cfg.stone)
+      if(cfg.forest)ground.material=forestPathMaterial
+    }
     if(type==='gap'){
       floor(0,middle);floor(middle+3,length)
       box(g,0,.02,-middle+.18,9,.04,.36,0xffb54f)
@@ -96,14 +103,24 @@ export function runner(root,cfg,route){
     for(let k=0;k<4;k++){
       const side=k%2?1:-1
       const z=-k*length/4
-      if(!fingerPillar(g,side,z,piece.d0*4+k))box(g,side*6,1,z,1.5,5+k,1.6,0x472c37).rotation.z=side*.16
-      box(g,side*4.3,.07,-k*length/4,.25,.14,4,0xc47b54)
+      if(cfg.forest){
+        const seed=piece.d0*4+k
+        forestTree(g,side*(7.4+k*.19),z,seed)
+        forestTree(g,side*(12+(k%3)*1.34),z-2.6,seed+5,true)
+      }else if(!fingerPillar(g,side,z,piece.d0*4+k)){
+        box(g,side*6,1,z,1.5,5+k,1.6,0x472c37).rotation.z=side*.16
+      }
+      box(g,side*4.3,.07,z,.25,.14,4,cfg.forest?0x816148:0xc47b54)
     }
     if(type==='rocks'){
       const side=Math.sign(x), variant=Math.round(piece.d0)
-      volcanicRock(g,x+side*.62,-.06,-middle,2.65,1.92,2.1,variant)
-      volcanicRock(g,x-side*.83,-.04,-middle+.18,2.18,1.45,1.92,variant+3)
-      volcanicRock(g,x+side*1.45,-.04,-middle-.45,1.1,.72,1.18,variant+5)
+      if(cfg.hedgeObstacles){
+        if(!hedge(g,x,-middle,4,1.8,2.12,side<0))box(g,x,.9,-middle,4,1.8,2.12,0x39472e)
+      }else{
+        volcanicRock(g,x+side*.62,-.06,-middle,2.65,1.92,2.1,variant)
+        volcanicRock(g,x-side*.83,-.04,-middle+.18,2.18,1.45,1.92,variant+3)
+        volcanicRock(g,x+side*1.45,-.04,-middle-.45,1.1,.72,1.18,variant+5)
+      }
       hazards.push({type,d,x})
     }
     if(type==='fire'){
@@ -111,7 +128,7 @@ export function runner(root,cfg,route){
       hazards.push({type,d,x,mesh:box(g,x,1,-middle,4,2,2,0xff631d)})
     }
     if(type==='hurdle'){
-      box(g,0,.55,-middle,9,1.1,.6,0x8c3b2e)
+      box(g,0,.55,-middle,9,1.1,.6,cfg.forest?0x66513b:0x8c3b2e)
       for(let k=-4;k<=4;k++)box(g,k,1.25,-middle,.25,.3,.25,0xffb54f)
       hazards.push({type,d})
     }
@@ -120,8 +137,13 @@ export function runner(root,cfg,route){
       for(const [a,b] of [[-4.5,ox-1.5],[ox+1.5,4.5]]){
         const width=b-a
         if(width<=.05)continue
-        const variant=Math.floor(piece.d0/length)+(a>ox?1:0)
-        volcanicRock(g,(a+b)/2,-.04,-middle,width,2.44,1.38,variant,true)
+        const center=(a+b)/2
+        if(cfg.hedgeObstacles){
+          if(!hedge(g,center,-middle,width,2.44,1.38,a>ox))box(g,center,1.2,-middle,width,2.4,1.38,0x39472e)
+        }else{
+          const variant=Math.floor(piece.d0/length)+(a>ox?1:0)
+          volcanicRock(g,center,-.04,-middle,width,2.44,1.38,variant,true)
+        }
       }
       hazards.push({type,d,x:ox})
     }
@@ -157,7 +179,8 @@ export function runner(root,cfg,route){
   const gate=new T.Group();root.add(gate);gate.position.copy(endPos);gate.rotation.y=endHeading;arch(gate,0)
   const xs=[...pieces.map(p=>p.p0.x),endPos.x],zs=[...pieces.map(p=>p.p0.z),endPos.z]
   const [x0,x1,z0,z1]=[Math.min(...xs),Math.max(...xs),Math.min(...zs),Math.max(...zs)]
-  box(root,(x0+x1)/2,-5,(z0+z1)/2,x1-x0+120,.5,z1-z0+120,0xce481e)
+  if(cfg.forest)forestWater(root,(x0+x1)/2,(z0+z1)/2,x1-x0+180,z1-z0+180)
+  else box(root,(x0+x1)/2,-5,(z0+z1)/2,x1-x0+120,.5,z1-z0+120,0xce481e)
   let index=0
   const find=d=>{
     while(index>0 && d<pieces[index].d0)index--

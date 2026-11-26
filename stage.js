@@ -17,6 +17,7 @@ export const stages = {
     boxes: { chance: 0.12 },
     segmentLength: 15,
     guardian: 'The Ash Warden', hp: 100, damage: 20,
+    wardenModels: 'hell',
     chaseSpeed: 2.4, attacks: ['swing','slam'],
     waves: [
       { enemies: ['rusher','rusher','shooter'] },
@@ -24,13 +25,15 @@ export const stages = {
       { boss: true, enemies: ['rusher','rusher'] }
     ],
     sword: 'Ember of the Fallen Sky',
+    rewardWeapon: 'warden',
     next: 'middleEarth'
   },
 
   middleEarth: {
-    name: 'Middle Earth · Ashen Wastes (Placeholder)',
-    placeholder: true,
-    sky: 0x24332c, stone: 0x525e56,
+    name: 'Middle Earth · Ashen Wastes',
+    hedgeObstacles: true,
+    forest: true,
+    sky: 0x8c9c7d, stone: 0x55543b,
     speed: 11, topSpeed: 25,
     segments: 18,
     gapStart: 3,
@@ -44,13 +47,15 @@ export const stages = {
     embers: { chance: 0.8, value: 60 },
     boxes: { chance: 0.2 },
     segmentLength: 15,
-    guardian: 'Warden of the Wastes (Placeholder)', hp: 120, damage: 22,
+    guardian: 'Warden of the Wastes', hp: 120, damage: 22,
+    wardenModels: 'earth',
     chaseSpeed: 2.6, attacks: ['swing','slam'],
     waves: [
       { enemies: ['rusher','shooter','brute'] },
       { boss: true, enemies: ['shooter','rusher'] }
     ],
     sword: 'Blade of Middle Earth',
+    rewardWeapon: 'earthSword',
     next: 'heavensGate'
   },
 

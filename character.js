@@ -1,9 +1,16 @@
 import * as T from 'three'
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js'
+import {clone} from 'three/addons/utils/SkeletonUtils.js'
 import modelUrl from './main-character.glb?url'
+import {createWardenSweep,fitWardenFist} from './warden-swing.js'
 
 const X=new T.Vector3(1,0,0), Y=new T.Vector3(0,1,0), Z=new T.Vector3(0,0,1)
-const turn=new T.Quaternion(), yawTurn=new T.Quaternion(), rollTurn=new T.Quaternion()
+const turn=new T.Quaternion(), yawTurn=new T.Quaternion(), rollTurn=new T.Quaternion(), gripTurn=new T.Quaternion()
+const bladeDirection=new T.Vector3(), restBladeDirection=new T.Vector3()
+const handRotation=new T.Quaternion(), actorRotation=new T.Quaternion(), slashGrip=new T.Quaternion()
+const bladeSide=new T.Vector3(), bladeFace=new T.Vector3()
+const bladeBasis=new T.Matrix4(), faceGrip=new T.Quaternion()
+const wristParentRotation=new T.Quaternion()
 
 function swingCurve(progress){
   const t=T.MathUtils.clamp(progress,0,1)
@@ -28,13 +35,13 @@ function dashCurve(progress){
   return Math.cos(((t-.72)/.28)*Math.PI*.5)
 }
 
-export function animateCharacter(player){
+export function animateCharacter(player,{template=null,targetHeight=1.95,materialFor=null,crossGrip=true,wardenFist=false,weaponScale=crossGrip?.94:.75}={}){
   const placeholder=player.children.filter(child=>child!==player.userData.weapon)
   const visual=new T.Group()
   player.add(visual)
   let rig,phase=0
 
-  new GLTFLoader().loadAsync(modelUrl).then(({scene})=>{
+  function install(scene){
     let mesh
     scene.traverse(node=>{if(node.isSkinnedMesh)mesh=node})
     if(!mesh)throw new Error('Player model has no skinned mesh')
@@ -83,46 +90,93 @@ export function animateCharacter(player){
       const elbowTurn=new T.Quaternion().setFromUnitVectors(elbowDirection,elbowTarget)
       const elbowParentInverse=lower.inverse.clone().multiply(shoulderTurn.clone().invert())
       const lowerRest=elbowParentInverse.clone().multiply(elbowTurn).multiply(elbowParentInverse.invert()).multiply(lower.rest)
-      return {upperRest,lowerRest}
+      return {upperRest,lowerRest,outward}
     })
 
     const model=scene.children.find(child=>child.getObjectById(mesh.id))
     const bounds=new T.Box3().setFromObject(mesh,true)
     const height=bounds.max.y-bounds.min.y
     visual.rotation.y=forward===1?Math.PI:0
-    visual.scale.setScalar(1.95/height)
+    visual.scale.setScalar(targetHeight/height)
     model.position.y-=bounds.min.y
+    if(materialFor)mesh.material=materialFor(mesh.material)
     visual.add(model)
 
     const hand=getBone('hand.R')
     const weapon=player.userData.weapon
-    hand.add(weapon)
-    weapon.position.set(0,.075,0)
-    weapon.scale.setScalar(.75)
+    const grip=new T.Group()
+    hand.add(grip)
+    grip.position.set(0,.075,0)
+    const gripRest=new T.Quaternion()
+    if(crossGrip){
+      const index=getBone('f_index.01.R'), pinky=getBone('f_pinky.01.R')
+      const across=index&&pinky?hand.worldToLocal(location(index)).sub(hand.worldToLocal(location(pinky))):X.clone()
+      across.y=0
+      if(across.lengthSq()<.000001)across.copy(X)
+      // The current swords extend along local +Y. Seat the hilt across the palm.
+      gripRest.setFromUnitVectors(Y,across.normalize())
+      grip.quaternion.copy(gripRest)
+    }
+    grip.add(weapon)
+    weapon.position.set(0,0,0)
+    weapon.scale.setScalar(weaponScale)
     weapon.rotation.set(0,0,0)
     player.userData.rigged=true
+    let wardenSweep
+    if(wardenFist){
+      const across=fitWardenFist(hand,grip,getBone)
+      const right=runningArms[1].outward*(forward===1?-1:1)
+      wardenSweep=createWardenSweep(player,arms[1][0].bone,arms[1][1].bone,hand,across,right)
+    }
 
     for(const piece of placeholder)piece.removeFromParent()
-    rig={legs,arms,shoulders,wristR,runningArms,pelvis,waist,chest,head,forward}
-  }).catch(error=>console.error('Could not load the player model',error))
+    const staff=Boolean(weapon.getObjectByName('spell-origin'))
+    rig={legs,arms,shoulders,wristR,runningArms,pelvis,waist,chest,head,forward,grip,gripRest,weapon,wardenSweep,staff}
+  }
+  if(template){
+    try{install(clone(template))}
+    catch(error){
+      console.warn('Using fallback for the enemy model',error)
+      return null
+    }
+  }else{
+    new GLTFLoader().loadAsync(modelUrl).then(({scene})=>install(scene))
+      .catch(error=>console.error('Could not load the player model',error))
+  }
 
   return function update(dt,motion,progress=0,inCombat=false){
     if(!rig)return
-    const {legs,arms,shoulders,wristR,runningArms,pelvis,waist,chest,head,forward}=rig
+    const {legs,arms,shoulders,wristR,runningArms,pelvis,waist,chest,head,forward,grip,gripRest,weapon,wardenSweep,staff}=rig
+    const wardenWalk=motion==='warden_walk'
+    const wardenSlam=motion==='warden_slam'
+    const wardenAttack=wardenSlam||motion==='warden_swing'
     const sprinting=motion==='run'
-    const running=sprinting||motion==='walk'
+    const running=sprinting||motion==='walk'||wardenWalk
     const airborne=motion==='jump'||motion==='fall'
-    const striking=motion.startsWith('attack')||motion==='dash_strike'||motion.startsWith('special')
+    const comboStrike=motion.startsWith('attack_')
+    const striking=comboStrike||motion==='dash_strike'||motion.startsWith('special')
     const dashing=motion==='dodge'||motion==='dash'
     const defeated=motion==='defeat'
 
-    phase+=dt*(sprinting?T.MathUtils.lerp(10,17,progress):motion==='walk'?10.5:3.2)
-    const stride=running?Math.sin(phase)*(sprinting?T.MathUtils.lerp(.62,.9,progress):.62):0
-    const swing=striking?swingCurve(progress):0
+    phase+=dt*(wardenWalk?5.8:sprinting?T.MathUtils.lerp(10,17,progress):running?10.5:3.2)
+    const stride=running?Math.sin(phase)*(wardenWalk?.53:sprinting?T.MathUtils.lerp(.62,.9,progress):.62):0
+    const smooth=T.MathUtils.smoothstep
+    const casting=motion==='cast'
+    const castDraw=casting?smooth(progress,0,.39)*(1-smooth(progress,.42,.57)):0
+    const castRelease=casting?smooth(progress,.42,.57)*(1-smooth(progress,.66,1)):0
+    const draw=comboStrike?smooth(progress,0,.19)*(1-smooth(progress,.19,.33)):0
+    const cut=comboStrike?smooth(progress,.18,.42)*(1-smooth(progress,.6,1)):0
+    const swing=comboStrike?cut-.48*draw:striking?swingCurve(progress):0
+    const charge=wardenAttack?smooth(progress,0,.30)*(1-smooth(progress,.34,.48)):0
+    const impact=wardenAttack?smooth(progress,.34,.48)*(1-smooth(progress,.57,.98)):0
+    const outwardSlash=motion==='attack_1'||motion==='attack_2'
+    const slashStart=.18, slashEnd=.6
+    const sweep=outwardSlash?smooth(progress,slashStart,slashEnd):0
+    const slashWeight=outwardSlash?smooth(progress,slashStart-.06,slashStart+.06)*(1-smooth(progress,slashEnd,.93)):0
     const lunge=dashing?dashCurve(progress):0
     const defeatTuck=defeated?Math.sin(Math.PI*progress):0
 
-    const blend=1-Math.exp(-dt*(striking||dashing?34:22))
+    const blend=1-Math.exp(-dt*(wardenAttack||comboStrike||casting?48:striking||dashing?34:22))
     const pose=(j,pitch=0,roll=0,yaw=0,rest=j?.rest)=>{
       if(!j)return
       const target=turn.setFromAxisAngle(j.x,pitch*forward).multiply(rest)
@@ -135,7 +189,15 @@ export function animateCharacter(player){
     for(let i=0;i<2;i++){
       const side=i===0?1:-1
       const leg=stride*side
-      if(dashing){
+      if(wardenWalk){
+        pose(legs[i][0],-leg,-side*.045)
+        pose(legs[i][1],.10+Math.max(0,-leg)*.95)
+        pose(legs[i][2],-.10-Math.max(0,-leg)*.42)
+      }else if(wardenAttack){
+        pose(legs[i][0],i===0?-.2-.38*impact:.2+.14*impact,-side*.14)
+        pose(legs[i][1],.20+.19*charge+.60*impact)
+        pose(legs[i][2],-.12-.22*impact)
+      }else if(dashing){
         const isLead=i===0
         pose(legs[i][0],(isLead?-.95:.62)*lunge,-side*.08*lunge)
         pose(legs[i][1],(isLead?1.15:.48)*lunge)
@@ -174,7 +236,39 @@ export function animateCharacter(player){
     for(let i=0;i<2;i++){
       const side=i===0?1:-1
       const isRight=i===1
-      if(running){
+      if(staff && (casting||isRight)){
+        const {upperRest,lowerRest,outward}=runningArms[i]
+        pose(shoulders[i],-.12*castDraw-.2*castRelease,0,.14*outward*castRelease)
+        if(isRight){
+          pose(arms[i][0],-.30-.98*castDraw-1.12*castRelease,outward*(.14+.22*castDraw),outward*.2,upperRest)
+          pose(arms[i][1],.12-.25*castDraw+.56*castRelease,0,0,lowerRest)
+        }else{
+          pose(arms[i][0],-.30-.72*castDraw+.21*castRelease,.12,-outward*.35*castDraw,upperRest)
+          pose(arms[i][1],.15-.28*castDraw+.19*castRelease,0,0,lowerRest)
+        }
+      }else if(wardenWalk){
+        pose(shoulders[i],0,side*.04,0)
+        pose(arms[i][0],stride*side*.45-.07,side*.095,0,runningArms[i].upperRest)
+        pose(arms[i][1],.46,0,0,runningArms[i].lowerRest)
+        if(isRight){wristPitch=.28;wristRoll=-.15}
+      }else if(wardenAttack){
+        const {upperRest,lowerRest}=runningArms[i]
+        if(wardenSlam){
+          pose(shoulders[i],-.35*charge+.14*impact,0,0)
+          pose(arms[i][0],-.16-2.35*charge-1.18*impact,side*(.10+.28*charge),-side*.23*charge,upperRest)
+          pose(arms[i][1],.23-.36*charge+.57*impact,0,0,lowerRest)
+          if(isRight){wristPitch=.35+.65*impact;wristRoll=-.1}
+        }else if(isRight){
+          pose(shoulders[i],-.12*charge-.28*impact,0,.34*charge-.45*impact)
+          pose(arms[i][0],-.20,0,-.14,upperRest)
+          pose(arms[i][1],.15,0,0,lowerRest)
+          wristPitch=.28;wristRoll=-.12
+        }else{
+          pose(shoulders[i],.18*impact,0,-.16*charge)
+          pose(arms[i][0],-.22-.38*charge+.56*impact,.12,0,upperRest)
+          pose(arms[i][1],.15+.40*impact,0,0,lowerRest)
+        }
+      }else if(running){
         pose(shoulders[i],0,0,0)
         pose(arms[i][0],stride*side*.8,0,0,runningArms[i].upperRest)
         arms[i][1].bone.quaternion.slerp(runningArms[i].lowerRest,blend)
@@ -216,8 +310,9 @@ export function animateCharacter(player){
           }
         }else if(motion==='attack_1'){
           if(isRight){
+            const outward=runningArms[i].outward
             pose(shoulders[1],-.18*swing,0,-.32*swing)
-            pose(arms[1][0],-1.45*swing,-.38+.62*swing,-.45*swing)
+            pose(arms[1][0],-1.45*swing,-.38-.38*draw+outward*.54*slashWeight,outward*(.16+1.08*sweep)*slashWeight)
             pose(arms[1][1],-.35+.22*swing)
             wristPitch=.62*swing;wristRoll=.25*swing
           }else{
@@ -227,8 +322,9 @@ export function animateCharacter(player){
           }
         }else if(motion==='attack_2'){
           if(isRight){
+            const outward=runningArms[i].outward
             pose(shoulders[1],-.08*swing,0,.36*swing)
-            pose(arms[1][0],-.85*swing,-.42-.88*swing,.55*swing)
+            pose(arms[1][0],-.85*swing,-.42+.57*draw+outward*.65*slashWeight,outward*(.24+1.16*sweep)*slashWeight)
             pose(arms[1][1],-.28+.18*swing)
             wristPitch=.35*swing;wristRoll=-.58*swing;wristYaw=.4*swing
           }else{
@@ -239,8 +335,8 @@ export function animateCharacter(player){
         }else if(motion==='attack_3'){
           if(isRight){
             pose(shoulders[1],-.28*swing,0,-.22*swing)
-            pose(arms[1][0],-2.15*swing,-.32+.28*swing,-.18*swing)
-            pose(arms[1][1],-.32+.24*swing)
+            pose(arms[1][0],-2.15*draw-1.20*cut,-.32+.28*cut,-.24*cut)
+            pose(arms[1][1],-.32-.36*draw+.68*cut)
             wristPitch=.85*swing;wristRoll=.12*swing
           }else{
             pose(shoulders[0],.16*swing,0,.25*swing)
@@ -264,8 +360,14 @@ export function animateCharacter(player){
         const breath=Math.sin(phase)
         pose(shoulders[i],0,0,0)
         if(guard){
-          pose(arms[i][0],isRight?-.22+.03*breath:-.34-.03*breath,-side*(.46+.02*breath),isRight?-.14:.22)
-          pose(arms[i][1],isRight?-.62:-.78)
+          if(template){
+            const {upperRest,lowerRest}=runningArms[i]
+            pose(arms[i][0],isRight?-.12+.03*breath:-.25-.03*breath,0,isRight?-.14:.22,upperRest)
+            arms[i][1].bone.quaternion.slerp(lowerRest,blend)
+          }else{
+            pose(arms[i][0],isRight?-.22+.03*breath:-.34-.03*breath,-side*(.46+.02*breath),isRight?-.14:.22)
+            pose(arms[i][1],isRight?-.62:-.78)
+          }
           if(isRight){wristPitch=.24;wristRoll=-.12}
         }else{
           pose(arms[i][0],(airborne?.5:0)+.02*breath,-side*.52)
@@ -277,7 +379,24 @@ export function animateCharacter(player){
 
     // --- TORSO, PELVIS & HEAD ---
     let pelvisYaw=0, waistPitch=0, chestPitch=0, chestRoll=0, chestYaw=0
-    if(sprinting){
+    if(casting){
+      waistPitch=.06-.11*castDraw+.30*castRelease
+      chestPitch=.07-.18*castDraw+.25*castRelease
+      chestYaw=.21*castDraw-.28*castRelease
+      pelvisYaw=chestYaw*.38
+    }else if(wardenWalk){
+      waistPitch=.13
+      chestPitch=-.08
+      chestRoll=-stride*.12
+      chestYaw=-stride*.36
+      pelvisYaw=stride*.22
+    }else if(wardenAttack){
+      waistPitch=.08-.15*charge+.36*impact
+      chestPitch=.06-(wardenSlam?.30:.17)*charge+(wardenSlam?.54:.22)*impact
+      chestYaw=wardenSlam?0:.52*charge-.73*impact
+      pelvisYaw=chestYaw*.42
+      chestRoll=wardenSlam?0:-.1*charge+.15*impact
+    }else if(sprinting){
       waistPitch=T.MathUtils.lerp(.12,.28,progress)
     }else if(running){
       chestPitch=.08
@@ -331,11 +450,68 @@ export function animateCharacter(player){
     }
 
     let bob=running?.035*Math.cos(phase*2):.012*Math.sin(phase)
-    if(dashing)bob-=.24*lunge
+    if(wardenWalk)bob=.035-.15*Math.pow(Math.abs(Math.cos(phase)),6)
+    else if(wardenAttack)bob=-.04+.08*charge-(wardenSlam?.29:.15)*impact
+    else if(dashing)bob-=.24*lunge
     else if(defeated)bob-=.22*defeatTuck
     else if(motion==='special_slam')bob+=.62*Math.sin(Math.PI*progress)-.14*Math.max(0,swing)
     else if(motion==='attack_3' && swing>0)bob-=.09*swing
     else if(inCombat && !running && !airborne)bob-=.04
     visual.position.y=T.MathUtils.damp(visual.position.y,bob,22,dt)
+    if(motion==='warden_swing')wardenSweep?.(progress)
+    if(staff){
+      // Aim by turning the wrist; the staff stays fixed inside the fist.
+      const hand=grip.parent
+      const right=runningArms[1].outward*(forward===1?-1:1)
+      bladeDirection.set(right*(.12+.24*castDraw),1-.92*castRelease,-.14+.34*castDraw-.81*castRelease)
+        .normalize().applyQuaternion(player.getWorldQuaternion(actorRotation))
+      hand.getWorldQuaternion(handRotation)
+      restBladeDirection.copy(Y).applyQuaternion(grip.quaternion).applyQuaternion(handRotation)
+      hand.parent.getWorldQuaternion(wristParentRotation).invert()
+      slashGrip.setFromUnitVectors(restBladeDirection,bladeDirection).multiply(handRotation).premultiply(wristParentRotation)
+      hand.quaternion.slerp(slashGrip,casting&&progress===.57?1:blend)
+    }
+    if(crossGrip && !wardenFist){
+      const turnThrough=wardenAttack?(wardenSlam?.30:.48)*(impact-.55*charge):
+        comboStrike?(motion==='attack_2'?-.38:.38)*(cut-.55*draw):0
+      const gripTarget=gripTurn.setFromAxisAngle(Y,turnThrough).multiply(gripRest)
+      const fittedBlade=weapon.children[0]?.userData.swordModel
+      const overhead=fittedBlade&&(motion==='attack_3'||wardenSlam)
+      const lift=wardenSlam?.31:.23, hit=wardenSlam?.48:.41
+      const overheadWeight=overhead?smooth(progress,.07,lift)*(1-smooth(progress,hit+.13,.95)):0
+      const carryBlade=fittedBlade && inCombat && (motion==='idle'||running)
+      const guideWeight=carryBlade?.78:Math.max(slashWeight,overheadWeight)
+      if(guideWeight>0){
+        const right=runningArms[1].outward*(forward===1?-1:1)
+        // Guide the visible blade through an arc in front of the fighter.
+        if(carryBlade){
+          bladeDirection.set(right*.83,-.35,-.54)
+        }else if(overhead){
+          const pitch=T.MathUtils.lerp(1.36,-.85,smooth(progress,lift,hit+.09))
+          bladeDirection.set(right*.36,Math.sin(pitch),-Math.cos(pitch))
+        }else{
+          const angle=T.MathUtils.lerp(fittedBlade?.21:.04,1.57,sweep)
+          const rise=motion==='attack_2'?T.MathUtils.lerp(-.3,.48,sweep):T.MathUtils.lerp(.28,-.18,sweep)
+          bladeDirection.set(right*Math.sin(angle),rise,-Math.cos(angle))
+        }
+        bladeDirection.normalize()
+        bladeDirection.applyQuaternion(player.getWorldQuaternion(actorRotation))
+          .applyQuaternion(grip.parent.getWorldQuaternion(handRotation).invert())
+        restBladeDirection.copy(Y).applyQuaternion(gripTarget)
+        slashGrip.setFromUnitVectors(restBladeDirection,bladeDirection).multiply(gripTarget)
+        if(fittedBlade){
+          bladeFace.copy(Y).applyQuaternion(handRotation)
+          bladeSide.crossVectors(bladeDirection,bladeFace)
+          if(bladeSide.lengthSq()>.05){
+            bladeSide.normalize()
+            bladeFace.crossVectors(bladeSide,bladeDirection)
+            bladeBasis.makeBasis(bladeSide,bladeDirection,bladeFace)
+            slashGrip.slerp(faceGrip.setFromRotationMatrix(bladeBasis),.9)
+          }
+        }
+        gripTarget.slerp(slashGrip,guideWeight)
+      }
+      grip.quaternion.slerp(gripTarget,blend)
+    }
   }
 }
