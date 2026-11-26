@@ -62,7 +62,13 @@ function resolveArena(pos,radius){
   pos.z=T.MathUtils.clamp(pos.z,-ARENA_LIMIT-.1,ARENA_LIMIT)
 }
 
+const hitBox=new T.Box3(),hitCenter=new T.Vector3()
 export class Combat{
+  // Record a hit for the damage popup: world position above the target's head, damage, and whether it was a heavy hit.
+  reportHit(target,dmg,heavy){
+    hitBox.setFromObject(target).getCenter(hitCenter)
+    this.hits.push({x:hitCenter.x,y:hitBox.max.y,z:hitCenter.z,dmg:Math.round(dmg),heavy})
+  }
   constructor(root,player,boss,cfg,maxHp=100,weapon=null){
     Object.assign(this,{
       root,player,boss,cfg,hp:maxHp,maxHp,bossHp:cfg.hp,phase:'chase',time:0,cycle:0,
@@ -70,6 +76,7 @@ export class Combat{
       switchLockout:0,potionCooldown:0,specialCooldown:0,specialMaxCd:DEFAULT_SPECIAL.cd,
       comboStep:0,comboTimer:0,comboBuffered:false,projFired:false
     })
+    this.hits=[] // damage dealt this frame, read by main.js to show damage popups
     this.combo=DEFAULT_COMBO
     this.dashStrike=DEFAULT_DASH_STRIKE
     this.special=DEFAULT_SPECIAL
@@ -312,9 +319,11 @@ export class Combat{
           this.spawnSlashWave(m.proj)
         }
         let landedAny=false
+        const heavyMove=m===this.special || m===this.combo[this.combo.length-1] // finisher or special
         if(this.waves.bossActive && this.bossHp>0 && !this.hitTargets.has(b)){
           diffCheck(b.position,p.position,this.dir,m.range+.6,m.arc,()=>{
             this.bossHp=Math.max(0,this.bossHp-m.dmg)
+            this.reportHit(b,m.dmg,heavyMove)
             this.hitTargets.add(b)
             this.flash=.18
             this.bossVel.copy(this.dir).multiplyScalar(m.kb)
@@ -325,6 +334,7 @@ export class Combat{
           if(!e.alive || this.hitTargets.has(e))continue
           diffCheck(e.position,p.position,this.dir,m.range+e.radius,m.arc,()=>{
             e.takeDamage(m.dmg,this.dir,m.kb)
+            this.reportHit(e.mesh,m.dmg,heavyMove)
             this.hitTargets.add(e)
             landedAny=true
           })
@@ -416,6 +426,7 @@ export class Combat{
       if(this.waves.bossActive && this.bossHp>0 && !wv.hit.has(b)){
         if(Math.hypot(wv.mesh.position.x-b.position.x,wv.mesh.position.z-b.position.z)<1.6){
           this.bossHp=Math.max(0,this.bossHp-wv.dmg)
+          this.reportHit(b,wv.dmg,true)
           wv.hit.add(b)
           this.flash=.15
         }
@@ -424,6 +435,7 @@ export class Combat{
         if(!e.alive || wv.hit.has(e))continue
         if(Math.hypot(wv.mesh.position.x-e.position.x,wv.mesh.position.z-e.position.z)<e.radius+1.15){
           e.takeDamage(wv.dmg,this.dir,5.0)
+          this.reportHit(e.mesh,wv.dmg,true)
           wv.hit.add(e)
         }
       }
@@ -446,6 +458,7 @@ export class Combat{
       if(pr.reflected){
         if(this.waves.bossActive && this.bossHp>0 && Math.hypot(pr.mesh.position.x-b.position.x,pr.mesh.position.z-b.position.z)<1.2){
           this.bossHp=Math.max(0,this.bossHp-pr.damage)
+          this.reportHit(b,pr.damage,true)
           this.flash=.18
           hitUnit=true
         }
@@ -453,6 +466,7 @@ export class Combat{
           if(!e.alive)continue
           if(Math.hypot(pr.mesh.position.x-e.position.x,pr.mesh.position.z-e.position.z)<e.radius+.35){
             e.takeDamage(pr.damage,this.dir,9.0)
+            this.reportHit(e.mesh,pr.damage,true)
             hitUnit=true
             break
           }
