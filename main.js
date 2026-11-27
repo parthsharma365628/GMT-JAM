@@ -11,6 +11,8 @@ import {hedgesReady} from './hedges.js'
 import {forestReady,forestSky,updateForestWater} from './forest.js'
 import {celestialReady,celestialSky,updateCloudDeck} from './celestial.js'
 import {infernoReady,infernalSky,updateInfernalLava} from './inferno.js'
+import {luckyChestsReady} from './lucky-chests.js'
+import {emberCoinsReady} from './ember-coins.js'
 import {stages,generateRoute} from './stage.js'
 import {axis,pressed,held} from './input.js'
 import {playCutscene} from './cutscene.js'
@@ -30,7 +32,10 @@ const updateSwordEffects=createSwordEffects(scene,player,renderer)
 const bosses={hell:hellBoss,earth:earthBoss,heaven:heavenBoss}
 let boss=hellBoss
 const animatePlayer=animateCharacter(player)
-const preview=import.meta.env.DEV?new URLSearchParams(location.search).get('preview'):null
+const previewParams=import.meta.env.DEV?new URLSearchParams(location.search):null
+const preview=previewParams?.get('preview')??null
+const previewRunnerStage=new Map([['hell','hell'],['middle-earth','middleEarth'],['heaven','heavensGate']]).get(preview)
+const previewPickup=previewRunnerStage?(previewParams.has('ember')?'ember':previewParams.has('chest')?'chest':null):null
 const previewSwords=preview==='hell-swords'
 const previewBossStages=new Map([
   ['hell-boss','hell'],['middle-earth-boss','middleEarth'],['heaven-boss','heavensGate'],['hell-swords','hell']
@@ -241,7 +246,7 @@ function load(id){
   room.add(boss,loot)
   const segments=generateRoute(cfg)
   if(previewPendulumStage===id)segments[1]={type:'pendulum',side:'center'}
-  route=runner(track,cfg,segments);doors=arena(room,cfg)
+  route=runner(track,cfg,segments,{showcasePickup:id===previewRunnerStage?previewPickup:null});doors=arena(room,cfg)
   scene.background=cfg.infernal?infernalSky():cfg.celestial?celestialSky():cfg.forest?forestSky():new T.Color(cfg.sky)
   scene.fog=new T.FogExp2(cfg.sky,cfg.infernal?.014:cfg.celestial?.018:cfg.forest?.025:.017)
   light.color.setHex(cfg.celestial?0xf6f4ff:cfg.forest?0xf0ebc9:0xffe8ce)
@@ -254,10 +259,12 @@ function load(id){
 const JUMP=13, RISE_GRAVITY=38, FALL_GRAVITY=52, JUMP_BUFFER=.15
 const RESPAWN_PAUSE=.6, RESPAWN_RAMP=1.4
 let runPace=0
+let waitingForPickupPreview=false
 function resetRunner(respawn=false){
   track.visible=true;room.visible=sky.visible=false;player.visible=true
   dist=checkpoint;lat=height=vertical=strafe=squash=jumpBuffer=0;player.scale.set(1,1,1)
   ready=respawn?RESPAWN_PAUSE:0;surge=respawn?0:1;runPace=0;pending=[];pendingBoxes=[]
+  waitingForPickupPreview=Boolean(previewPickup && stageId===previewRunnerStage && !respawn)
   place();runnerView(camera.position,aim)
 }
 function restartStage(){
@@ -473,6 +480,15 @@ function drawProgress(fraction){
   progressFill.style.backgroundSize=f+'% 100%'
 }
 function run(dt){
+  if(waitingForPickupPreview){
+    if(axis('right','left') || pressed.has('jump'))waitingForPickupPreview=false
+    else{
+      for(const chest of route.boxes)animateChest(chest)
+      for(const coin of route.pickups)coin.mesh.rotation.y+=dt*2
+      bars(cfg.name,previewPickup==='ember'?'Ember Coin Preview':'Lucky Chest Preview','','A / D or Space to start running')
+      return
+    }
+  }
   strafe=T.MathUtils.damp(strafe,axis('right','left')*12,18,dt)
   lat=T.MathUtils.clamp(lat+strafe*dt,-4,4)
   jumpBuffer=pressed.has('jump')?JUMP_BUFFER:Math.max(0,jumpBuffer-dt)
@@ -500,7 +516,7 @@ function run(dt){
 
   for(const b of route.boxes){
     if(b.taken)continue
-    b.mesh.rotation.y+=dt*2.4;b.mesh.rotation.x+=dt*1.3
+    animateChest(b)
     if(Math.abs(dist-b.d)<1.05 && Math.abs(lat-b.x)<1.25 && Math.abs(height+1-b.y)<1.5){
       b.taken=true;b.mesh.visible=false
       const lockedBoxWeapons=weaponCatalog.filter(w=>w.unlockType==='box' && !progress.weapons.has(w.id))
@@ -543,6 +559,11 @@ function run(dt){
   const defaultTip=ready>0?'Get ready…':dist<45?'Hit Lucky Boxes for weapons':''
   bars(cfg.name,cfg.placeholder?'Placeholder Runner Section':'Reach the gate','',bannerTimer>0?hint.textContent:defaultTip)
   if(dist>=route.end){clearSection('run');toRoom(camera.position);toRoom(aim);encounter()}
+}
+
+function animateChest(chest){
+  chest.mesh.rotation.y=.45+Math.sin(clock*1.8+chest.d)*.38
+  chest.mesh.position.y=chest.y+Math.sin(clock*3+chest.d)*.14
 }
 
 function dropGuardianSword(){
@@ -682,7 +703,7 @@ function frameCamera(dt){
 function updatePlayerAnimation(dt){
   if(state==='pause' || state==='shop')return
   const inCombat=['intro','combat','reward','exit'].includes(state)
-  if(state==='run')animatePlayer(dt,height>0?'jump':ready>0?'idle':'run',runPace,false)
+  if(state==='run')animatePlayer(dt,height>0?'jump':ready>0||waitingForPickupPreview?'idle':'run',runPace,false)
   else if(state==='fall')animatePlayer(dt,'fall',0,false)
   else if(state==='heaven')animatePlayer(dt,'walk',0,false)
   else if(state==='defeat')animatePlayer(dt,'defeat',Math.min(age*2,.5),true)
@@ -695,7 +716,7 @@ function updatePlayerAnimation(dt){
   }else animatePlayer(dt,'idle',0,inCombat)
 }
 
-Promise.all([rocksReady,pillarsReady,wardensReady,weaponsReady,hedgesReady,forestReady,celestialReady,infernoReady]).then(()=>{
+Promise.all([rocksReady,pillarsReady,wardensReady,weaponsReady,hedgesReady,forestReady,celestialReady,infernoReady,luckyChestsReady,emberCoinsReady]).then(()=>{
   heaven(sky)
   replaceWeaponModel(player.userData.weapon,'ember')
   for(const [name,stage,height] of [['hell',stages.hell,2.35],['earth',stages.middleEarth,2.25],['heaven',stages.heavensGate,2.18]]){
@@ -714,9 +735,7 @@ Promise.all([rocksReady,pillarsReady,wardensReady,weaponsReady,hedgesReady,fores
   else if(previewPendulumStage)start(previewPendulumStage)
   else if(preview==='heaven-ascent'){start('heavensGate');ascent()}
   else if(preview==='heaven-dungeon'){start('heavensGate');encounter()}
-  else if(preview==='middle-earth')start('middleEarth')
-  else if(preview==='hell')start()
-  else if(preview==='heaven')start('heavensGate')
+  else if(previewRunnerStage)start(previewRunnerStage)
   else title()
   let prev=performance.now()
   renderer.setAnimationLoop(now=>{

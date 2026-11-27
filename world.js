@@ -9,6 +9,8 @@ import {infernalLava,infernalShrine} from './inferno.js'
 import {marbleFloor,realmFloor,redCarpet} from './terrain.js'
 import {pendulum} from './pendulum.js'
 import {addArenaInlay} from './arena-inlays.js'
+import {luckyChest,luckyChestColor} from './lucky-chests.js'
+import {emberCoin} from './ember-coins.js'
 const cube = new T.BoxGeometry()
 const materials = new Map()
 export function box(parent,x,y,z,w,h,d,color) {
@@ -53,8 +55,6 @@ export function actor(parent,boss=false) {
 }
 const sideX={left:-1.8,center:0,right:1.8}, gateX={left:-2.5,center:0,right:2.5}
 const gemGeo=new T.OctahedronGeometry(.34), gemMat=new T.MeshStandardMaterial({color:0xffd75e,emissive:0xff8a1c,emissiveIntensity:.7,flatShading:true})
-const luckyGeo=new T.BoxGeometry(.85,.85,.85)
-const luckyMat=new T.MeshStandardMaterial({color:0x4deeea,emissive:0x1b7ced,emissiveIntensity:.65,flatShading:true})
 const TURN_RADIUS=6, tmpA=new T.Vector3(), tmpB=new T.Vector3()
 export const forward=(h,v=new T.Vector3())=>v.set(-Math.sin(h),0,-Math.cos(h))
 const rightOf=(h,v=new T.Vector3())=>v.set(Math.cos(h),0,-Math.sin(h))
@@ -91,7 +91,7 @@ function curve(root,p,cfg){
     for(const s of [-1,1]){sample(p,(k+.5)*step,s*4.3,v);box(root,v.x,.07,v.z,.25,.14,arcDepth(s*4.3),railColor(cfg)).rotation.y=h}
   }
 }
-export function runner(root,cfg,route){
+export function runner(root,cfg,route,{showcasePickup=null}={}){
   const hazards=[], pickups=[], boxes=[], length=cfg.segmentLength, middle=length/2
   const {pieces,end,endPos,endHeading}=layout(cfg,route)
   for(const [index,piece] of pieces.entries()){
@@ -197,17 +197,24 @@ export function runner(root,cfg,route){
     const safeY=(type==='gap'||type==='hurdle')?2.3:1.25
 
     // Mario-Kart style Lucky Box pickup (unlocks a weapon for the dungeon)
-    if(type!=='entry' && type!=='approach' && Math.random()<(cfg.boxes?.chance??.12)){
-      const mesh=new T.Mesh(luckyGeo,luckyMat)
+    if((showcasePickup==='chest' && type==='entry') || (type!=='entry' && type!=='approach' && Math.random()<(cfg.boxes?.chance??.12))){
+      const mesh=luckyChest(cfg)??new T.Group()
+      if(mesh.children.length===0){
+        box(mesh,0,0,0,.95,.8,.68,luckyChestColor(cfg))
+        box(mesh,0,0,0,1,.12,.73,0xe0b861)
+      }
       mesh.position.set(safeX,safeY,-middle)
-      mesh.rotation.set(.4,.6,.3)
-      box(mesh,0,0,0,.96,.18,.96,0xffd75e)
+      mesh.rotation.y=.45
       g.add(mesh)
       boxes.push({d:piece.d0+middle,x:safeX,y:safeY,mesh})
-    }else if(type!=='entry' && Math.random()<(cfg.embers?.chance??.7)){
-      const gem=(o,gx,gy)=>{const mesh=new T.Mesh(gemGeo,gemMat);mesh.position.set(gx,gy,-o);g.add(mesh);pickups.push({d:piece.d0+o,x:gx,y:gy,mesh})}
-      const row=gx=>{for(let k=-2;k<=2;k++)gem(middle+k*1.6,gx,1.2)}
-      const hop=at=>{for(let k=-2;k<=2;k++)gem(at+k*1.2,0,1.2+1.4*(1-(k/2.6)**2))}
+    }else if(type==='entry'?showcasePickup==='ember':Math.random()<(cfg.embers?.chance??.7)){
+      const coin=(o,gx,gy)=>{
+        const mesh=emberCoin()
+        mesh.position.set(gx,gy,-o);mesh.rotation.y=o*.38;g.add(mesh)
+        pickups.push({d:piece.d0+o,x:gx,y:gy,mesh})
+      }
+      const row=gx=>{for(let k=-2;k<=2;k++)coin(middle+k*1.6,gx,1.2)}
+      const hop=at=>{for(let k=-2;k<=2;k++)coin(at+k*1.2,0,1.2+1.4*(1-(k/2.6)**2))}
       if(type==='gap')hop(middle+1.5)
       else if(type==='hurdle')hop(middle)
       else row(safeX)
