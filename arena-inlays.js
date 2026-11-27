@@ -115,6 +115,51 @@ function grove(ctx){
   }
 }
 
+function sunMosaic(ctx){
+  const gold=['#bd7920','#e1ad49','#d2992f','#f2c969','#c98b2a','#f6dc8d']
+  const grout='#916022', shadow='#a36c29', shine='#f8df98'
+  const rays=16
+  ctx.beginPath();ctx.arc(0,0,4.05,0,tau)
+  for(let i=0;i<rays;i++){
+    const a=i*tau/rays, tip=i%2===0?10.85:8.25
+    ctx.moveTo(...polar(3.35,a-.15))
+    ctx.lineTo(...polar(5.7,a-.112));ctx.lineTo(...polar(tip,a))
+    ctx.lineTo(...polar(5.7,a+.112));ctx.lineTo(...polar(3.35,a+.15));ctx.closePath()
+  }
+  ctx.fillStyle=grout;ctx.fill()
+  ctx.save();ctx.clip()
+  // Stagger the tesserae so the rays and sun disk read as one piece of tilework.
+  for(let row=-28;row<28;row++)for(let col=-28;col<28;col++){
+    const key=(row+28)*56+col+28, x=(col+(row%2)*.5)*.40,y=row*.40
+    ctx.fillStyle=gold[Math.floor(noise(key+17)*gold.length)]
+    ctx.fillRect(x+.016,y+.016,.368,.368)
+    ctx.fillStyle='rgba(255,246,187,.28)';ctx.fillRect(x+.04,y+.033,.31,.033)
+  }
+  ctx.restore()
+  ring(ctx,4.05,shadow,.15);ring(ctx,3.85,shine,.081)
+
+  // A small compass rose sits inside the sun, with a ring of gold and lapis around it.
+  const star=Array.from({length:16},(_,i)=>polar(i%2===0?2.82:1.13,i*tau/16))
+  ctx.beginPath();ctx.moveTo(...star[0]);for(const point of star.slice(1))ctx.lineTo(...point);ctx.closePath()
+  ctx.fillStyle='#fce7a0';ctx.fill();ctx.strokeStyle='#a86924';ctx.lineWidth=.083;ctx.stroke()
+  ring(ctx,3.15,shadow,.07);ring(ctx,.62,shadow,.09)
+  for(const [inner,outer,count] of [[11.32,11.68,92],[12.06,12.66,108]]){
+    for(let i=0;i<count;i++){
+      const a=i*tau/count,b=(i+1)*tau/count
+      wedge(ctx,inner,outer,a+.002,b-.002)
+      ctx.fillStyle=i%9===0?'#466687':gold[Math.floor(noise(i+count)*gold.length)]
+      ctx.fill()
+    }
+  }
+  for(const r of [11.25,11.74,11.99,12.72,13.05])ring(ctx,r,r===13.05?shine:shadow,r===13.05?.075:.058)
+  for(let i=0;i<8;i++){
+    const a=i*tau/8
+    const diamond=[polar(13.7,a),polar(13.03,a+.033),polar(12.40,a),polar(13.03,a-.033)]
+    ctx.beginPath();ctx.moveTo(...diamond[0]);for(const point of diamond.slice(1))ctx.lineTo(...point);ctx.closePath()
+    ctx.fillStyle='#d7a043';ctx.fill();ctx.strokeStyle=shadow;ctx.lineWidth=.065;ctx.stroke()
+  }
+}
+
 function decal(draw,lit){
   const canvas=document.createElement('canvas')
   canvas.width=canvas.height=1024
@@ -127,12 +172,13 @@ function decal(draw,lit){
   return lit?new T.MeshStandardMaterial({...options,roughness:1}):new T.MeshBasicMaterial(options)
 }
 
-const materials={hell:null,earth:null}
+const designs={hell:ritual,earth:grove,heaven:sunMosaic}
+const materials={}
 
 export function addArenaInlay(parent,cfg){
-  const realm=cfg.infernal?'hell':cfg.forest?'earth':null
+  const realm=cfg.infernal?'hell':cfg.forest?'earth':cfg.celestial?'heaven':null
   if(!realm)return
-  const mat=materials[realm]??=(realm==='hell'?decal(ritual,false):decal(grove,true))
+  const mat=materials[realm]??=decal(designs[realm],realm!=='hell')
   const inlay=new T.Mesh(surface,mat)
   inlay.position.y=.008
   inlay.renderOrder=-1
