@@ -7,6 +7,8 @@ import {forestTree,forestWater} from './forest.js'
 import {celestialCloud,celestialCloudDeck,celestialPillar} from './celestial.js'
 import {infernalLava,infernalShrine} from './inferno.js'
 import {marbleFloor,realmFloor,redCarpet} from './terrain.js'
+import {pendulum} from './pendulum.js'
+import {addArenaInlay} from './arena-inlays.js'
 const cube = new T.BoxGeometry()
 const materials = new Map()
 export function box(parent,x,y,z,w,h,d,color) {
@@ -171,13 +173,24 @@ export function runner(root,cfg,route){
       hazards.push({type,d,x:ox})
     }
     if(type==='pendulum'){
-      const support=cfg.celestial?0xb4a38e:0x5a4048
+      const support=cfg.celestial?0xb4a38e:cfg.forest?0x614831:0x5a4048
       for(const s of [-1,1])box(g,s*5,3.3,-middle,.6,6.6,.6,support)
       box(g,0,6.6,-middle,10.6,.5,.6,support)
       const pivot=new T.Group();g.add(pivot);pivot.position.set(0,6.3,-middle)
-      box(pivot,0,-2.8,0,.15,5.6,.15,0x2c2630)
-      box(pivot,0,-5.6,0,1.2,1.2,.5,0xd8d0c0).rotation.z=Math.PI/4
-      hazards.push({type,d,mesh:pivot,pivotY:6.3,arm:5.6})
+      box(pivot,0,-2.8,0,.15,5.6,.15,cfg.celestial?0xa78650:0x2c2630)
+      const bob=new T.Group();bob.position.y=-5.6;pivot.add(bob)
+      const width=cfg.celestial?2.14:cfg.forest?1.82:1.68
+      const height=cfg.celestial?1.25:cfg.forest?1.45:1.54
+      const depth=cfg.celestial?1.44:1.24
+      const base=-height/2
+      if(cfg.celestial)celestialCloud(bob,0,base,0,width,height,depth,index%2===0)
+      else if(cfg.forest){
+        const mount=new T.Group();mount.position.y=base+.035;bob.add(mount)
+        if(!hedge(mount,0,0,width,height,depth,index%2===0))box(bob,0,0,0,width,height,depth,0x39472e)
+      }else volcanicRock(bob,0,base,0,width,height,depth,index)
+      const swing=pendulum(g,pivot,-middle,d,{width,height,depth},cfg.celestial?'ice':cfg.forest?'leaf':'fire')
+      swing.update(0,false)
+      hazards.push({type,d,swing})
     }
 
     const safeX=type==='rocks'?-Math.sign(x)*2.8:type==='fire'?(Math.random()<.5?-3.2:3.2):type==='gate'?(gateX[side]??0):0
@@ -226,6 +239,7 @@ function arch(g,z,celestial=false){
 }
 export function arena(g,cfg){
   box(g,0,-.5,0,60,1,60,cfg.stone).material=realmFloor(cfg)
+  addArenaInlay(g,cfg)
   if(cfg.infernal){
     infernalLava(g,0,0,170,170)
     infernalShrine(g,-33,-25,.49,2.45)

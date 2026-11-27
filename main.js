@@ -36,6 +36,9 @@ const previewBossStages=new Map([
   ['hell-boss','hell'],['middle-earth-boss','middleEarth'],['heaven-boss','heavensGate'],['hell-swords','hell']
 ])
 const previewBossStage=previewBossStages.get(preview)
+const previewPendulumStage=new Map([
+  ['hell-pendulum','hell'],['earth-pendulum','middleEarth'],['heaven-pendulum','heavensGate']
+]).get(preview)
 
 // --- WEAPON CATALOG ADAPTER (Teammate's weapons.js plugs in via registerWeapons) ---
 let weaponCatalog=[
@@ -89,14 +92,18 @@ export function registerWeapons(customList){
   }
 }
 window.registerWeapons=registerWeapons
-const guardianWeapons=new Map(Object.values(stages).filter(stage=>stage.rewardWeapon).map(stage=>[
-  stage.rewardWeapon,{
-    id:stage.rewardWeapon,name:stage.sword,
+const guardianWeapons=new Map(Object.values(stages).filter(stage=>stage.rewardWeapon).map(stage=>{
+  const {rewardWeapon:id,sword:name,rewardDamage:damage}=stage
+  return [id,{
+    id,name,
+    combo:DEFAULT_COMBO.map((move,i)=>({...move,dmg:damage.combo[i]})),
+    dashStrike:{...DEFAULT_DASH_STRIKE,dmg:damage.dash},
+    special:{...DEFAULT_SPECIAL,dmg:damage.special,proj:{...DEFAULT_SPECIAL.proj,dmg:damage.wave}},
     createMesh:parent=>{
-      if(!attachWeaponModel(parent,stage.rewardWeapon))sword(parent)
+      if(!attachWeaponModel(parent,id))sword(parent)
     }
-  }
-]))
+  }]
+}))
 const getWeapon=id=>guardianWeapons.get(id)??weaponCatalog.find(w=>w.id===id)??weaponCatalog[0]
 const earnedGuardianWeapons=()=>[...guardianWeapons.values()].filter(w=>progress.weapons.has(w.id))
 
@@ -222,6 +229,7 @@ function renderShop(){
 }
 
 function load(id){
+  for(const hazard of route?.hazards??[])hazard.swing?.dispose()
   combat?.dispose();track.clear();room.clear()
   stageId=id;cfg=stages[id]
   progress.entryWeapon=progress.equipped
@@ -231,7 +239,9 @@ function load(id){
   loot.visible=false
   if(!cfg.rewardWeapon||!attachWeaponModel(loot,cfg.rewardWeapon,1.2))sword(loot)
   room.add(boss,loot)
-  route=runner(track,cfg,generateRoute(cfg));doors=arena(room,cfg)
+  const segments=generateRoute(cfg)
+  if(previewPendulumStage===id)segments[1]={type:'pendulum',side:'center'}
+  route=runner(track,cfg,segments);doors=arena(room,cfg)
   scene.background=cfg.infernal?infernalSky():cfg.celestial?celestialSky():cfg.forest?forestSky():new T.Color(cfg.sky)
   scene.fog=new T.FogExp2(cfg.sky,cfg.infernal?.014:cfg.celestial?.018:cfg.forest?.025:.017)
   light.color.setHex(cfg.celestial?0xf6f4ff:cfg.forest?0xf0ebc9:0xffe8ce)
@@ -518,13 +528,13 @@ function run(dt){
         h.mesh.scale.y=size;h.mesh.position.y=size/2+.1
       }
     }
-    if(h.type==='pendulum'){h.angle=.9*Math.sin(clock*2.4+h.d);h.mesh.rotation.z=h.angle}
+    if(h.type==='pendulum')h.swing.update(clock,near<65)
     if((h.type==='gap' && rel>.35 && rel<2.65 && !height) ||
       (h.type==='rocks' && near<1.2 && Math.abs(lat-h.x)<2.1) ||
       (h.type==='fire' && cycle>2.2 && near<1.2 && Math.abs(lat-h.x)<2.1) ||
       (h.type==='hurdle' && near<.5 && height<1) ||
       (h.type==='gate' && near<.7 && Math.abs(lat-h.x)>1) ||
-      (h.type==='pendulum' && near<1 && Math.hypot(lat-h.arm*Math.sin(h.angle),height+1-(h.pivotY-h.arm*Math.cos(h.angle)))<1.15)){
+      (h.type==='pendulum' && near<1.2 && h.swing.hits(lat,height+.85,rel))){
       die();return
     }
   }
@@ -701,6 +711,7 @@ Promise.all([rocksReady,pillarsReady,wardensReady,weaponsReady,hedgesReady,fores
     }
     encounter()
   }
+  else if(previewPendulumStage)start(previewPendulumStage)
   else if(preview==='heaven-ascent'){start('heavensGate');ascent()}
   else if(preview==='heaven-dungeon'){start('heavensGate');encounter()}
   else if(preview==='middle-earth')start('middleEarth')

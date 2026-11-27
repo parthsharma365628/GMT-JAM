@@ -17,7 +17,7 @@ export const stages = {
     embers: { chance: 0.72, value: 50 },
     boxes: { chance: 0.12 },
     segmentLength: 15,
-    guardian: 'The Ash Warden', hp: 100, damage: 20,
+    guardian: 'The Ash Warden', hp: 180, damage: 20,
     wardenModels: 'hell',
     chaseSpeed: 2.4, attacks: ['swing','slam'],
     waves: [
@@ -27,6 +27,7 @@ export const stages = {
     ],
     sword: 'Ember of the Fallen Sky',
     rewardWeapon: 'warden',
+    rewardDamage: { combo: [19, 24, 35], dash: 27, special: 42, wave: 18 },
     next: 'middleEarth'
   },
 
@@ -40,7 +41,7 @@ export const stages = {
     gapStart: 3,
     obstacles: {
       rocks: ['left','right'], gap: ['center'],
-      hurdle: ['center'], gate: ['left','right']
+      hurdle: ['center'], gate: ['left','right'], pendulum: ['center']
     },
     turns: [
       { after: 6, angle: -40 }, { after: 7, angle: 40 }
@@ -48,7 +49,7 @@ export const stages = {
     embers: { chance: 0.8, value: 60 },
     boxes: { chance: 0.2 },
     segmentLength: 15,
-    guardian: 'Warden of the Wastes', hp: 120, damage: 22,
+    guardian: 'Warden of the Wastes', hp: 240, damage: 22,
     wardenModels: 'earth',
     dropRewardOnDefeat: true,
     chaseSpeed: 2.6, attacks: ['swing','slam'],
@@ -58,6 +59,7 @@ export const stages = {
     ],
     sword: 'Blade of Middle Earth',
     rewardWeapon: 'earthSword',
+    rewardDamage: { combo: [23, 29, 40], dash: 32, special: 50, wave: 21 },
     next: 'heavensGate'
   },
 
@@ -78,7 +80,7 @@ export const stages = {
     embers: { chance: 0.85, value: 75 },
     boxes: { chance: 0.25 },
     segmentLength: 15,
-    guardian: 'Seraphic Gatekeeper', hp: 145, damage: 25,
+    guardian: 'Seraphic Gatekeeper', hp: 310, damage: 25,
     wardenModels: 'heaven',
     dropRewardOnDefeat: true,
     chaseSpeed: 2.8, attacks: ['swing','slam'],
@@ -88,6 +90,7 @@ export const stages = {
     ],
     sword: 'Crownblade of Heaven',
     rewardWeapon: 'heavenSword',
+    rewardDamage: { combo: [27, 34, 47], dash: 38, special: 58, wave: 24 },
     next: null
   }
 }
