@@ -87,7 +87,12 @@ Write the cutscene dialogue in `dialogue.js`.
 
 - `A` / `D` or Left / Right arrows: steer
 - `Space`: jump
+- `V`: switch between third-person and first-person view (remembered between visits)
+- `B`: turn motion blur on or off (remembered between visits)
+- `M`: mute or unmute sound effects
 - `Esc`: pause
+
+Chain embers and close calls (passing a hazard narrowly without touching it) within 3 seconds of each other to build a streak, which multiplies ember and close-call points up to ×5. Dying resets the streak.
 
 ### Ash Warden fight
 

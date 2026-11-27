@@ -19,6 +19,8 @@
   },
   "homepage": "https://github.com/parthsharma365628/GMT-JAM#readme",
   "dependencies": {
+    "@fontsource/pixelify-sans": "^5.3.0",
+    "@fontsource/silkscreen": "^5.3.0",
     "three": "^0.180.0"
   },
   "devDependencies": {

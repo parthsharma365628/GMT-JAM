@@ -1,4 +1,9 @@
 import * as T from 'three'
+// Bundled pixel fonts for the UI (see "Pixel UI theme" in style.css)
+import '@fontsource/pixelify-sans/400.css'
+import '@fontsource/pixelify-sans/600.css'
+import '@fontsource/pixelify-sans/700.css'
+import '@fontsource/silkscreen/400.css'
 import {actor,runner,arena,heaven,sword,greatsword,rapier,forward} from './world.js'
 import {Combat,MAX_HEARTS,MAX_OVERHEAL,POTION_HEARTS,DEFAULT_COMBO,DEFAULT_DASH_STRIKE,DEFAULT_SPECIAL,equipWeaponMesh} from './combat.js'
 import {animateCharacter} from './character.js'
@@ -16,6 +21,9 @@ import {emberCoinsReady} from './ember-coins.js'
 import {stages,generateRoute} from './stage.js'
 import {axis,pressed,held} from './input.js'
 import {playCutscene} from './cutscene.js'
+import {createRunnerJuice,realmOf} from './runner-juice.js'
+import {sfx} from './sfx.js'
+import {createPostFx} from './post-fx.js'
 const $=s=>document.querySelector(s), menu=$('#menu'),hud=$('#hud'),hint=$('#hint')
 const renderer=new T.WebGLRenderer({antialias:true})
 renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));document.body.prepend(renderer.domElement)
@@ -32,6 +40,22 @@ const updateSwordEffects=createSwordEffects(scene,player,renderer)
 const bosses={hell:hellBoss,earth:earthBoss,heaven:heavenBoss}
 let boss=hellBoss
 const animatePlayer=animateCharacter(player)
+const juice=createRunnerJuice(scene,camera,player,renderer)
+// Post-processing (post-fx.js): runner motion blur scaled by run speed (B turns it off; saved under gmt-jam.blur)
+// and bloom for the whole game (tune BLOOM in post-fx.js).
+const postFx=createPostFx(renderer)
+let blurOn=localStorage.getItem('gmt-jam.blur')!=='off'
+// Runner camera: third person (default) or first person, toggled with V and saved in localStorage.
+const VIEW_KEY='gmt-jam.view'
+let firstPerson=localStorage.getItem(VIEW_KEY)==='fp',fpBlend=0,bodyHidden=false,bobPhase=0
+const viewToggle=$('#view-toggle')
+$('#view-mode').textContent=firstPerson?'First person':'Third person'
+viewToggle.classList.toggle('fp',firstPerson)
+viewToggle.addEventListener('click',()=>{toggleView();viewToggle.blur()})
+// Streak: embers and close calls chained within STREAK_WINDOW seconds raise the score multiplier (x1..x5).
+const STREAK_WINDOW=3,NEAR_BONUS=25
+let streak=0,streakTimer=0,pendingBonus=0,milestone=0
+const multiplier=()=>1+Math.min(4,Math.floor(streak/5))
 const previewParams=import.meta.env.DEV?new URLSearchParams(location.search):null
 const preview=previewParams?.get('preview')??null
 const previewRunnerStage=new Map([['hell','hell'],['middle-earth','middleEarth'],['heaven','heavensGate']]).get(preview)
@@ -254,16 +278,21 @@ function load(id){
   light.intensity=cfg.celestial?1.34:cfg.forest?1.65:2.1
   sun.color.setHex(cfg.celestial?0xffeac9:cfg.forest?0xf7e8ad:0xffdcba)
   sun.intensity=cfg.celestial?1.56:cfg.forest?2.05:2.5
+  juice.setRealm(realmOf(cfg));postFx.setRealm(realmOf(cfg));milestone=0
   stageScore=score;stageEmbers=embers;checkpoint=clock=best=0;resetRunner();set('run')
 }
-const JUMP=13, RISE_GRAVITY=38, FALL_GRAVITY=52, JUMP_BUFFER=.15
+// Jump peak = JUMP²/(2·RISE_GRAVITY) ≈ 3.6, high enough to clear rocks, gate walls and sliders (2.7 tall).
+// Strong gravity keeps the airtime (~0.6 s) and the distance covered no longer than before, so it is not floaty.
+const JUMP=22.4, RISE_GRAVITY=70, FALL_GRAVITY=95, JUMP_BUFFER=.15
 const RESPAWN_PAUSE=.6, RESPAWN_RAMP=1.4
 let runPace=0
 let waitingForPickupPreview=false
 function resetRunner(respawn=false){
   track.visible=true;room.visible=sky.visible=false;player.visible=true
   dist=checkpoint;lat=height=vertical=strafe=squash=jumpBuffer=0;player.scale.set(1,1,1)
-  ready=respawn?RESPAWN_PAUSE:0;surge=respawn?0:1;runPace=0;pending=[];pendingBoxes=[]
+  ready=respawn?RESPAWN_PAUSE:0;surge=respawn?0:1;runPace=0;pending=[];pendingBoxes=[];pendingBonus=0
+  for(const h of route.hazards){h.passed=h.d+1.3<dist;h.close=false;h.mover?.reset(dist,route)}
+  streak=0;streakTimer=0;drawStreak();juice.reset()
   waitingForPickupPreview=Boolean(previewPickup && stageId===previewRunnerStage && !respawn)
   place();runnerView(camera.position,aim)
 }
@@ -278,17 +307,27 @@ function showScore(pop=false){
   if(pop){const el=$('#points');el.classList.remove('pop');void el.offsetWidth;el.classList.add('pop')}
 }
 function die(){
-  for(const e of pending){e.taken=false;e.mesh.visible=true;embers--;score-=cfg.embers.value}
+  for(const e of pending){e.taken=false;e.mesh.visible=true;embers--;score-=e.awarded??cfg.embers.value}
   for(const b of pendingBoxes){
     b.taken=false;b.mesh.visible=true
     if(b.unlockedId)progress.weapons.delete(b.unlockedId)
   }
+  score-=pendingBonus;pendingBonus=0
+  if(streak>=5)callout('Streak lost','lost')
   pending=[];pendingBoxes=[];showScore();retries++;set('fall');hint.textContent='Returning to checkpoint'
+  juice.death();sfx.death()
 }
-function place(){const h=route.at(dist,lat,player.position);player.position.y=height;player.rotation.set(0,h,-strafe*.015)}
+function place(){const h=route.at(dist,lat,player.position);player.position.y=height;player.rotation.set(0,h-strafe*.018,-strafe*.03)}
 function runnerView(eyeOut,focusOut){
   const h=route.at(dist,lat*.45,eyeOut);eyeOut.addScaledVector(forward(h,dir),-8);eyeOut.y=4.8+height*.15
   route.at(dist,lat*.3,focusOut);focusOut.addScaledVector(dir,5);focusOut.y=1
+}
+// First-person eye: at head height above the runner, looking down the route. Bobs with each stride.
+function firstPersonView(eyeOut,focusOut){
+  const h=route.at(dist,lat,eyeOut);forward(h,dir)
+  const bob=state==='run'&&!height&&ready<=0?Math.abs(Math.sin(bobPhase))*.1-.05:0
+  eyeOut.y=player.position.y+1.62+bob;eyeOut.addScaledVector(dir,.25)
+  focusOut.copy(eyeOut).addScaledVector(dir,10);focusOut.y=eyeOut.y-1.25+Math.min(1,vertical*.04)
 }
 const toRoom=v=>v.sub(route.endPos).applyAxisAngle(UP,-route.endHeading)
 function start(id='hell'){
@@ -303,7 +342,7 @@ function title(){
   start();set('title')
   panel(
     'From Hell<br><i>to Heaven</i>',
-    'Survive the ascent. Collect Embers & Lucky Boxes. Conquer the chamber.\nRun · A/D to steer, Space to jump\nFight · WASD move, LMB/J strike, RMB/I special, Space/K dodge, 1-3/Q weapon, R potion',
+    'Survive the ascent. Collect Embers & Lucky Boxes. Conquer the chamber.\nRun · A/D to steer, Space to jump, V first/third person\nFight · WASD move, LMB/J strike, RMB/I special, Space/K dodge, 1-3/Q weapon, R potion',
     [['Start Ascent',intro],['Skip to Dungeon 1',()=>{start();embers=250;showScore();encounter()}]]
   )
 }
@@ -459,7 +498,7 @@ function drawFightHud(){
   specialFill.style.width=100*(1-combat.specialCooldown/combat.specialMaxCd)+'%'
 }
 // Damage popups: the red_nacho icon and the damage number rise from where an enemy was hit, then fade.
-const popupLayer=$('#popups'),popupPos=new T.Vector3()
+const popupLayer=$('#popups'),popupPos=new T.Vector3(),popupPos2=new T.Vector3()
 function showHits(hits){
   for(const h of hits){
     popupPos.set(h.x,h.y,h.z).project(camera)
@@ -474,10 +513,45 @@ function showHits(hits){
 // Runner progress bar: the red fill inside finish_line.png grows smoothly from dark to bright red.
 const progressBar=$('#progress'),progressFill=$('#progress .fill')
 let barShown=false,barFill=-1
-function showProgress(on){if(on!==barShown){barShown=on;progressBar.hidden=$('#controls').hidden=!on}} // bar and controls panel
+function showProgress(on){if(on!==barShown){barShown=on;progressBar.hidden=$('#controls').hidden=viewToggle.hidden=!on;
+  // Nudge players who have never switched views towards the camera badge at the start of a run.
+  if(on && !localStorage.getItem(VIEW_KEY)){viewToggle.classList.remove('nudge');void viewToggle.offsetWidth;viewToggle.classList.add('nudge')}
+  document.body.classList.toggle('running',on)}} // bar, controls panel and streak
 function drawProgress(fraction){
   const f=Math.round(Math.min(1,Math.max(0,fraction))*1000)/10;if(f===barFill)return;barFill=f
   progressFill.style.backgroundSize=f+'% 100%'
+}
+function bumpStreak(){
+  const before=multiplier();streak++;streakTimer=STREAK_WINDOW
+  const after=multiplier();if(after>before){callout('×'+after+' Streak!','tier');sfx.tier(after);juice.kick(5)}
+  drawStreak()
+}
+function closeCall(){
+  bumpStreak()
+  const bonus=NEAR_BONUS*multiplier();score+=bonus;pendingBonus+=bonus;showScore(true)
+  const at=popupPos.copy(player.position);at.y+=2.2
+  worldPop(at,'Close call! +'+bonus,'close');juice.nearMiss(at);sfx.close();juice.slowmo(.12)
+}
+// Runner popups and callouts share the #popups layer with the combat damage numbers.
+function worldPop(pos,text,cls=''){
+  const v=popupPos2.copy(pos).project(camera);if(v.z>1)return
+  const el=document.createElement('div');el.className='run-pop '+cls;el.textContent=text
+  el.style.left=((v.x+1)/2*innerWidth)+'px';el.style.top=((1-v.y)/2*innerHeight)+'px'
+  popupLayer.append(el);setTimeout(()=>el.remove(),1000)
+}
+function callout(text,cls=''){
+  const el=document.createElement('div');el.className='callout '+cls;el.textContent=text
+  el.style.marginTop=popupLayer.querySelectorAll('.callout').length*1.1+'em' // stack over any still showing
+  popupLayer.append(el);setTimeout(()=>el.remove(),1400)
+}
+const streakEl=$('#streak')
+function drawStreak(){
+  if(!streakEl)return
+  streakEl.hidden=streak<2
+  if(streak<2)return
+  streakEl.querySelector('b').textContent='×'+multiplier()
+  streakEl.querySelector('span').textContent=streak+' streak'
+  streakEl.classList.remove('bump');void streakEl.offsetWidth;streakEl.classList.add('bump')
 }
 function run(dt){
   if(waitingForPickupPreview){
@@ -492,16 +566,23 @@ function run(dt){
   strafe=T.MathUtils.damp(strafe,axis('right','left')*12,18,dt)
   lat=T.MathUtils.clamp(lat+strafe*dt,-4,4)
   jumpBuffer=pressed.has('jump')?JUMP_BUFFER:Math.max(0,jumpBuffer-dt)
-  if(jumpBuffer>0 && height===0){vertical=JUMP;jumpBuffer=0}
+  if(jumpBuffer>0 && height===0){vertical=JUMP;jumpBuffer=0;juice.jump();sfx.jump()}
   const airborne=height>0
-  vertical-=(vertical>0?RISE_GRAVITY:FALL_GRAVITY)*dt;height=Math.max(0,height+vertical*dt);if(!height)vertical=0
-  if(airborne && !height)squash=1
-  squash=Math.max(0,squash-dt*6);player.scale.set(1+.12*squash,1-.2*squash+(vertical>0?.06:0),1+.12*squash)
+  vertical-=(vertical>0?RISE_GRAVITY:FALL_GRAVITY)*dt;height=Math.max(0,height+vertical*dt)
+  if(airborne && !height){
+    const impact=T.MathUtils.clamp(-vertical/JUMP,.5,1.3)
+    squash=impact;juice.land(impact);sfx.land(impact)
+  }
+  if(!height)vertical=0
+  squash=Math.max(0,squash-dt*6);player.scale.set(1+.16*squash,1-.26*squash+(vertical>0?.1:0),1+.16*squash)
+  if(streakTimer>0){streakTimer-=dt;if(streakTimer<=0){streak=0;drawStreak()}}
   if(ready>0)ready-=dt
   else{
     surge=Math.min(1,surge+dt/RESPAWN_RAMP)
     runPace=Math.min(1,dist/route.end)*surge
-    dist+=dt*(cfg.speed+((cfg.topSpeed??cfg.speed)-cfg.speed)*runPace)
+    const speed=cfg.speed+((cfg.topSpeed??cfg.speed)-cfg.speed)*runPace
+    dist+=dt*speed
+    if(!height)bobPhase+=dt*speed*.55
   }
   place()
   if(dist>best){score+=Math.floor(dist)-Math.floor(best);best=dist;showScore()}
@@ -510,7 +591,11 @@ function run(dt){
     if(e.taken)continue
     e.mesh.rotation.y+=dt*3
     if(Math.abs(dist-e.d)<.9 && Math.abs(lat-e.x)<1.1 && Math.abs(height+1-e.y)<1.4){
-      e.taken=true;e.mesh.visible=false;pending.push(e);embers++;score+=cfg.embers.value;showScore(true)
+      e.taken=true;e.mesh.visible=false;pending.push(e);embers++
+      bumpStreak()
+      e.awarded=cfg.embers.value*multiplier();score+=e.awarded;showScore(true)
+      const at=e.mesh.getWorldPosition(popupPos)
+      juice.pickup(at);sfx.coin(streak);worldPop(at,'+'+e.awarded,multiplier()>1?'hot':'')
     }
   }
 
@@ -519,6 +604,7 @@ function run(dt){
     animateChest(b)
     if(Math.abs(dist-b.d)<1.05 && Math.abs(lat-b.x)<1.25 && Math.abs(height+1-b.y)<1.5){
       b.taken=true;b.mesh.visible=false
+      juice.pickup(b.mesh.getWorldPosition(popupPos),true);sfx.chest()
       const lockedBoxWeapons=weaponCatalog.filter(w=>w.unlockType==='box' && !progress.weapons.has(w.id))
       if(lockedBoxWeapons.length){
         const pick=lockedBoxWeapons[Math.floor(Math.random()*lockedBoxWeapons.length)]
@@ -545,17 +631,31 @@ function run(dt){
       }
     }
     if(h.type==='pendulum')h.swing.update(clock,near<65)
+    if(h.mover && near<80)h.mover.update(dt,clock,dist,route,ready<=0)
     if((h.type==='gap' && rel>.35 && rel<2.65 && !height) ||
-      (h.type==='rocks' && near<1.2 && Math.abs(lat-h.x)<2.1) ||
+      (h.type==='rocks' && near<1.2 && Math.abs(lat-h.x)<2.1 && height<1.95) ||
       (h.type==='fire' && cycle>2.2 && near<1.2 && Math.abs(lat-h.x)<2.1) ||
       (h.type==='hurdle' && near<.5 && height<1) ||
-      (h.type==='gate' && near<.7 && Math.abs(lat-h.x)>1) ||
-      (h.type==='pendulum' && near<1.2 && h.swing.hits(lat,height+.85,rel))){
+      (h.type==='gate' && near<.7 && Math.abs(lat-h.x)>1 && height<2.45) ||
+      (h.type==='pendulum' && near<1.2 && h.swing.hits(lat,height+.85,rel)) ||
+      (h.mover && h.mover.hits(dist,lat,height))){
       die();return
+    }
+    if(!h.passed){ // close calls: brushing past a hazard without touching it
+      const dx=Math.abs(lat-(h.x??0))
+      if((h.type==='rocks' && near<1.2 && dx<3) ||
+        (h.type==='fire' && near<1.2 && ((cycle>1.5 && cycle<=2.2 && dx<2.1) || (cycle>2.2 && dx<3))) ||
+        (h.type==='hurdle' && near<.5 && height<1.8) ||
+        (h.type==='gate' && near<.7 && dx>.55) ||
+        (h.type==='pendulum' && near<1.2 && (h.swing.hits(lat+.75,height+.85,rel)||h.swing.hits(lat-.75,height+.85,rel)||h.swing.hits(lat,height+1.4,rel))) ||
+        (h.mover && h.mover.near(dist,lat,height)))h.close=true
+      if(h.mover?.behind?h.mover.behind(dist):rel>1.3){h.passed=true;if(h.close)closeCall()}
     }
   }
   const cp=route.checkpoint(dist);if(cp!==checkpoint){checkpoint=cp;pending=[];pendingBoxes=[]}
   drawProgress(dist/route.end)
+  const quarter=Math.floor(dist/route.end*4)
+  if(quarter>milestone && quarter<4){milestone=quarter;callout(['','25% · Keep climbing','Halfway there','75% · Almost out'][quarter],'milestone');sfx.milestone()}
   const defaultTip=ready>0?'Get ready…':dist<45?'Hit Lucky Boxes for weapons':''
   bars(cfg.name,cfg.placeholder?'Placeholder Runner Section':'Reach the gate','',bannerTimer>0?hint.textContent:defaultTip)
   if(dist>=route.end){clearSection('run');toRoom(camera.position);toRoom(aim);encounter()}
@@ -687,10 +787,16 @@ function frameCamera(dt){
     const aspectScale=Math.max(1,1.35/camera.aspect);eye.sub(focus).multiplyScalar(aspectScale).add(focus)
   }else{
     if(state==='title'){eye.set(6,5,7);focus.set(0,1,-10)}
-    else if(track.visible)runnerView(eye,focus)
+    else if(track.visible){
+      runnerView(eye,focus)
+      if(fpBlend>0){
+        const t=fpBlend*fpBlend*(3-2*fpBlend)
+        firstPersonView(fpEye,fpFocus);eye.lerp(fpEye,t);focus.lerp(fpFocus,t)
+      }
+    }
     else{eye.set(p.x*.45,4.8+p.y*.15,p.z+8);focus.set(p.x*.3,1,p.z-5)}
   }
-  const k=1-Math.exp(-dt*(state==='intro'?1.4:7))
+  const k=1-Math.exp(-dt*(state==='intro'?1.4:7+fpBlend*45))
   camera.position.lerp(eye,k);aim.lerp(focus,k)
   if(combat?.shake>0){
     camera.position.x+=(Math.random()-.5)*combat.shake
@@ -698,6 +804,15 @@ function frameCamera(dt){
     combat.shake=Math.max(0,combat.shake-dt*2.4)
   }
   camera.lookAt(aim)
+  juice.camera(dt,{active:runnerActive(),speed:runPace,strafe,fpBlend})
+}
+const fpEye=new T.Vector3(),fpFocus=new T.Vector3()
+const runnerActive=()=>track.visible && (state==='run'||state==='fall')
+function toggleView(){
+  firstPerson=!firstPerson;localStorage.setItem(VIEW_KEY,firstPerson?'fp':'tp')
+  $('#view-mode').textContent=firstPerson?'First person':'Third person'
+  viewToggle.classList.toggle('fp',firstPerson);viewToggle.classList.remove('nudge','flip');void viewToggle.offsetWidth;viewToggle.classList.add('flip')
+  if(runnerActive())callout(firstPerson?'First person':'Third person','view')
 }
 
 function updatePlayerAnimation(dt){
@@ -740,17 +855,33 @@ Promise.all([rocksReady,pillarsReady,wardensReady,weaponsReady,hedgesReady,fores
   let prev=performance.now()
   renderer.setAnimationLoop(now=>{
     const dt=Math.min(.05,Math.max(0,(now-prev)/1000));prev=now
-    update(dt);updatePlayerAnimation(dt);showProgress(['run','fall'].includes(state))
+    if(pressed.has('view'))toggleView()
+    if(pressed.has('blur')){blurOn=!blurOn;localStorage.setItem('gmt-jam.blur',blurOn?'on':'off');callout(blurOn?'Motion blur on':'Motion blur off','view')}
+    if(pressed.has('mute'))callout(sfx.toggleMute()?'Sound off':'Sound on','view')
+    const gdt=runnerActive()?juice.scaleDt(dt):dt
+    update(gdt);updatePlayerAnimation(gdt);showProgress(['run','fall'].includes(state))
+    // First-person blend; the body hides once the camera is inside it.
+    const wantFp=firstPerson && track.visible && ['run','fall','pause'].includes(state)
+    fpBlend=T.MathUtils.clamp(fpBlend+(wantFp?dt:-dt)*4,0,1)
+    if(fpBlend>.55 && track.visible){player.visible=false;bodyHidden=true}
+    else if(bodyHidden){player.visible=true;bodyHidden=false}
+    if(state==='run' && streakEl)streakEl.style.setProperty('--t',(streakTimer/STREAK_WINDOW).toFixed(3))
     const fighting=!!combat && room.visible && !['pause','shop','title','victory'].includes(state);showFightHud(fighting);if(fighting)drawFightHud()
     if(state!=='pause'){
       frameCamera(dt)
       const swing=state==='combat' && combat.anim.state==='attack'?combat.anim.progress:0
       updateSwordEffects(dt,swing)
-    }
+      const active=runnerActive()
+      juice.update(gdt,{active:active && state==='run' && !waitingForPickupPreview,speed:ready>0?0:runPace*surge,running:state==='run'&&!height&&ready<=0,airborne:height>0,trails:fpBlend<.5,fp:fpBlend>.5})
+      sfx.wind(active && state==='run' && ready<=0?.25+runPace*.75:0)
+    }else sfx.wind(0)
     if(cfg.forest)updateForestWater(clock)
     if(cfg.celestial)updateCloudDeck(clock)
     if(cfg.infernal)updateInfernalLava(clock)
-    pressed.clear();renderer.render(scene,camera)
+    if(room.visible)doors.updateGlow(clock)
+    pressed.clear()
+    const blur=blurOn && state==='run' && runnerActive() && ready<=0?(.45+runPace*.75)*surge:0
+    postFx.render(scene,camera,player,dt,blur)
   })
   window.addEventListener('blur',()=>{held.clear();if(!['title','victory','pause'].includes(state))pause()})
 })

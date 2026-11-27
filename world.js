@@ -8,6 +8,8 @@ import {celestialCloud,celestialCloudDeck,celestialPillar} from './celestial.js'
 import {infernalLava,infernalShrine} from './inferno.js'
 import {marbleFloor,realmFloor,redCarpet} from './terrain.js'
 import {pendulum} from './pendulum.js'
+import {sweeper,slider,boulder} from './runner-obstacles.js'
+import {glowHazards} from './hazard-glow.js'
 import {addArenaInlay} from './arena-inlays.js'
 import {luckyChest,luckyChestColor} from './lucky-chests.js'
 import {emberCoin} from './ember-coins.js'
@@ -193,8 +195,13 @@ export function runner(root,cfg,route,{showcasePickup=null}={}){
       hazards.push({type,d,swing})
     }
 
-    const safeX=type==='rocks'?-Math.sign(x)*2.8:type==='fire'?(Math.random()<.5?-3.2:3.2):type==='gate'?(gateX[side]??0):0
-    const safeY=(type==='gap'||type==='hurdle')?2.3:1.25
+    // moving obstacles (runner-obstacles.js): main.js drives them through `mover`
+    if(type==='sweeper')hazards.push({type,d,x:0,mover:sweeper(g,cfg,-middle,d)})
+    if(type==='slider')hazards.push({type,d,x:0,mover:slider(g,cfg,-middle,d)})
+    if(type==='boulder')hazards.push({type,d,x,mover:boulder(root,cfg,d,x)})
+
+    const safeX=type==='sweeper'?(Math.random()<.5?-2.8:2.8):type==='boulder'?(x?-Math.sign(x)*2.8:(Math.random()<.5?-2.8:2.8)):type==='rocks'?-Math.sign(x)*2.8:type==='fire'?(Math.random()<.5?-3.2:3.2):type==='gate'?(gateX[side]??0):0
+    const safeY=(type==='gap'||type==='hurdle')?3.2:1.25 // near the top of a jump
 
     // Mario-Kart style Lucky Box pickup (unlocks a weapon for the dungeon)
     if((showcasePickup==='chest' && type==='entry') || (type!=='entry' && type!=='approach' && Math.random()<(cfg.boxes?.chance??.12))){
@@ -214,7 +221,7 @@ export function runner(root,cfg,route,{showcasePickup=null}={}){
         pickups.push({d:piece.d0+o,x:gx,y:gy,mesh})
       }
       const row=gx=>{for(let k=-2;k<=2;k++)coin(middle+k*1.6,gx,1.2)}
-      const hop=at=>{for(let k=-2;k<=2;k++)coin(at+k*1.2,0,1.2+1.4*(1-(k/2.6)**2))}
+      const hop=at=>{for(let k=-2;k<=2;k++)coin(at+k*1.2,0,1.2+2.5*(1-(k/2.6)**2))} // follows the jump arc
       if(type==='gap')hop(middle+1.5)
       else if(type==='hurdle')hop(middle)
       else row(safeX)
@@ -280,6 +287,8 @@ export function arena(g,cfg){
     }else volcanicRock(hazardGroup,x,-.04,z,width,height,depth,i)
     hazards.push({x,z,rx:width*.46,rz:depth*.46})
   })
+  // instant-kill obstacles glow in the realm's colour (hazard-glow.js)
+  const updateGlow=glowHazards(hazardGroup,cfg.celestial?'heaven':cfg.forest?'forest':'hell',hazards)
   arch(g,-30,cfg.celestial)
   const door=box(g,0,2.5,-30,5,5,.8,cfg.celestial?0xc09a66:0x834e43)
   const entry=box(g,0,2,30,6,4,.65,cfg.celestial?0xb5b0a1:0x675465)
@@ -290,7 +299,7 @@ export function arena(g,cfg){
   box(stall,0,3.15,-.3,3.6,.22,2.1,0x9e342b)
   const orb=new T.Mesh(gemGeo,gemMat); orb.position.set(0,1.75,0); stall.add(orb)
   stall.userData.orb=orb
-  return {door,entry,stall,hazardGroup,hazards,solids}
+  return {door,entry,stall,hazardGroup,hazards,solids,updateGlow}
 }
 export function heaven(g){
   celestialCloudDeck(g,0,-47,240,250)
